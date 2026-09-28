@@ -1,0 +1,13 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-accent: #c2410c;
+}
+
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  @apply bg-white text-zinc-900 antialiased dark:bg-zinc-900 dark:text-zinc-100;
+}

@@ -1,0 +1,11 @@
+packages:
+  - apps/*
+  - packages/*
+
+# pnpm 10 bloque les scripts d'installation par défaut. On n'autorise que esbuild.
+# better-sqlite3 (v13+) embarque ses binaires précompilés dans prebuilds/ :
+# autoriser son build déclencherait une compilation node-gyp inutile (Visual Studio requis).
+onlyBuiltDependencies:
+  - esbuild
+ignoredBuiltDependencies:
+  - better-sqlite3

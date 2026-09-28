@@ -1268,14 +1268,14 @@ mes recettes/
 │   │   ├── package.json
 │   │   ├── tsconfig.json
 │   │   ├── drizzle.config.ts
+│   │   ├── drizzle/             # migrations SQL générées par drizzle-kit, versionnées
 │   │   ├── src/
 │   │   │   ├── index.ts         # démarrage serveur (node-server), migrations au boot
 │   │   │   ├── app.ts           # construction de l'app Hono (exporte AppType)
 │   │   │   ├── env.ts           # variables d'environnement validées (Zod)
 │   │   │   ├── db/
 │   │   │   │   ├── schema.ts
-│   │   │   │   ├── client.ts
-│   │   │   │   └── migrations/  # SQL généré par drizzle-kit, versionné
+│   │   │   │   └── client.ts
 │   │   │   ├── routes/          # recipes.ts, imports.ts, tags.ts, images.ts, auth.ts, shopping.ts, mealPlan.ts, system.ts
 │   │   │   ├── services/        # recipeService.ts, importService.ts, tagService.ts, shoppingService.ts, imageService.ts
 │   │   │   ├── importers/
