@@ -1,5 +1,6 @@
 import type {
   ImportStrategy,
+  ImportSuggestions,
   PartialImport,
   RecipeDraft,
   RecipeSource,
@@ -10,6 +11,7 @@ export type ImportResult = {
   draft: RecipeDraft;
   strategies: ImportStrategy[];
   warnings: string[];
+  suggestions: ImportSuggestions;
 };
 
 /**

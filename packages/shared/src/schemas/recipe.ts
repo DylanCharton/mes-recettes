@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { SeasonSchema, type Season } from '../seasons';
+import { TagNameSchema, type TagRef } from './tag';
 
 export const RECIPE_STATUSES = ['to_try', 'validated', 'archived'] as const;
 export const RecipeStatusSchema = z.enum(RECIPE_STATUSES);
@@ -77,6 +79,10 @@ export const RecipeInputSchema = z.object({
   notes: optionalText(LIMITS.notes),
   status: RecipeStatusSchema.optional(),
   isFavorite: z.boolean().optional(),
+  /** Noms des tags ; un tag inconnu est créé (unicité insensible à la casse et aux accents). */
+  tags: z.array(TagNameSchema).max(30).optional(),
+  /** Ensemble des saisons ; [] = non renseignée, les 4 = toute l'année. */
+  seasons: z.array(SeasonSchema).max(4).optional(),
   imagePath: z.string().regex(IMAGE_PATH_REGEX).nullish(),
   // Champs fournis par un import (enregistrés à la création uniquement).
   nutrition: NutritionSchema.nullish(),
@@ -106,14 +112,43 @@ export const RecipePatchSchema = z
     status: RecipeStatusSchema,
     isFavorite: z.boolean(),
     notes: optionalText(LIMITS.notes),
+    seasons: z.array(SeasonSchema).max(4),
   })
   .partial();
 export type RecipePatch = z.input<typeof RecipePatchSchema>;
 
+/** « a,b,c » → [a, b, c] validés un par un ; absent ou vide → undefined. */
+const csv = <T extends z.ZodType>(item: T) =>
+  z.preprocess(
+    (value) => (typeof value === 'string' && value ? value.split(',').filter(Boolean) : undefined),
+    z.array(item).optional(),
+  );
+
+export const RECIPE_SORTS = ['recent', 'title', 'time', 'updated'] as const;
+export type RecipeSort = (typeof RECIPE_SORTS)[number];
+
 export const RecipeListQuerySchema = z.object({
+  q: z.string().trim().max(100).optional(),
+  /** Tags exigés (ET). */
+  tags: csv(z.coerce.number().int().positive()),
+  favorite: z.enum(['1', 'true']).optional(),
+  /** Statuts acceptés ; par défaut, tout sauf « archivée ». */
+  status: csv(RecipeStatusSchema),
+  /** Saisons acceptées (OU), filtre strict : une recette sans saison n'apparaît pas. */
+  seasons: csv(SeasonSchema),
+  maxTime: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(24 * 60)
+    .optional(),
+  source: RecipeSourceSchema.optional(),
+  ingredient: z.string().trim().max(60).optional(),
+  sort: z.enum(RECIPE_SORTS).default('recent'),
   limit: z.coerce.number().int().min(1).max(200).default(60),
   offset: z.coerce.number().int().min(0).default(0),
 });
+export type RecipeListQuery = z.output<typeof RecipeListQuerySchema>;
 
 export type RecipeIngredient = {
   id: number;
@@ -156,11 +191,13 @@ export type RecipeDetail = {
   updatedAt: string;
   ingredients: RecipeIngredient[];
   steps: RecipeStep[];
+  tags: TagRef[];
+  seasons: Season[];
 };
 
 export type RecipeCard = Pick<
   RecipeDetail,
-  'id' | 'title' | 'imageUrl' | 'totalMinutes' | 'status' | 'isFavorite'
+  'id' | 'title' | 'imageUrl' | 'totalMinutes' | 'status' | 'isFavorite' | 'tags'
 >;
 
 export type RecipeList = { items: RecipeCard[]; total: number };

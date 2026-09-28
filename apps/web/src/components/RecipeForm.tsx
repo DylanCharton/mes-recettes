@@ -6,11 +6,15 @@ import {
   type IngredientInput,
   type RecipeDetail,
   type RecipeDraft,
+  type ImportSuggestions,
   type RecipeInput,
+  type Season,
 } from '@mes-recettes/shared';
 import { ApiError, errorMessage } from '../api/client';
 import { uploadImage } from '../api/recipes';
 import { resizeImage } from '../lib/resizeImage';
+import { SeasonPicker } from './SeasonPicker';
+import { TagInput } from './TagInput';
 import { inputClass, labelClass, primaryButtonClass } from './ui';
 
 type FormState = {
@@ -26,6 +30,8 @@ type FormState = {
   notes: string;
   imagePath: string | null;
   imageUrl: string | null;
+  tags: string[];
+  seasons: Season[];
 };
 
 const toText = (value: number | null) => (value === null ? '' : String(value));
@@ -52,6 +58,8 @@ function fromDraft(draft: RecipeDraft): FormState {
     notes: draft.notes ?? '',
     imagePath: null,
     imageUrl: draft.imageSourceUrl ?? null,
+    tags: draft.tags ?? [],
+    seasons: draft.seasons ?? [],
   };
 }
 
@@ -90,6 +98,8 @@ function initialState(recipe?: RecipeDetail): FormState {
     notes: recipe?.notes ?? '',
     imagePath: recipe?.imagePath ?? null,
     imageUrl: recipe?.imageUrl ?? null,
+    tags: recipe?.tags.map((tag) => tag.name) ?? [],
+    seasons: recipe?.seasons ?? [],
   };
 }
 
@@ -119,6 +129,8 @@ function toInput(
       .filter(Boolean),
     notes: state.notes,
     imagePath: state.imagePath,
+    tags: state.tags,
+    seasons: state.seasons,
   };
 }
 
@@ -126,11 +138,13 @@ type Props = {
   recipe?: RecipeDetail;
   /** Brouillon d'import ou pré-remplissage (prioritaire sur `recipe`). */
   draft?: RecipeDraft;
+  /** Tags et saisons proposés par l'import (non cochés). */
+  suggestions?: ImportSuggestions;
   submitLabel: string;
   onSubmit: (input: RecipeInput) => Promise<unknown>;
 };
 
-export function RecipeForm({ recipe, draft, submitLabel, onSubmit }: Props) {
+export function RecipeForm({ recipe, draft, suggestions, submitLabel, onSubmit }: Props) {
   const [state, setState] = useState(() => (draft ? fromDraft(draft) : initialState(recipe)));
   const structured = useMemo<StructuredLines>(
     () =>
@@ -252,6 +266,24 @@ export function RecipeForm({ recipe, draft, submitLabel, onSubmit }: Props) {
           value={state.totalMinutes}
           onChange={(v) => set('totalMinutes', v)}
           placeholder="auto"
+        />
+      </div>
+
+      <div>
+        <p className={labelClass}>Tags</p>
+        <TagInput
+          value={state.tags}
+          onChange={(tags) => set('tags', tags)}
+          suggested={suggestions?.tags}
+        />
+      </div>
+
+      <div>
+        <p className={labelClass}>Saisons</p>
+        <SeasonPicker
+          value={state.seasons}
+          onChange={(seasons) => set('seasons', seasons)}
+          suggested={suggestions?.seasons}
         />
       </div>
 

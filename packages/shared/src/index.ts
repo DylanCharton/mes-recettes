@@ -7,3 +7,5 @@ export * from './scaling';
 export * from './schemas/recipe';
 export * from './schemas/errors';
 export * from './schemas/import';
+export * from './seasons';
+export * from './schemas/tag';

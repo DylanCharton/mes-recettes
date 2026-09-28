@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { Season } from '../seasons';
 import type { RecipeInput } from './recipe';
 
 export const ImportPreviewRequestSchema = z
@@ -16,6 +17,8 @@ export type ImportStrategy = 'json_ld' | 'next_data' | 'open_graph';
 /** Brouillon d'import : un `RecipeInput` pré-rempli, jamais enregistré tel quel. */
 export type RecipeDraft = RecipeInput;
 
+export type ImportSuggestions = { tags: string[]; seasons: Season[] };
+
 export type ExistingRecipeSummary = { id: number; title: string; imageUrl: string | null };
 
 export type ImportPreviewResponse =
@@ -25,6 +28,8 @@ export type ImportPreviewResponse =
       provider: string;
       strategies: ImportStrategy[];
       warnings: string[];
+      /** Proposés à l'écran de validation, jamais appliqués d'office. */
+      suggestions: ImportSuggestions;
     }
   | { status: 'duplicate'; existing: ExistingRecipeSummary; canonicalUrl: string };
 

@@ -42,6 +42,11 @@ export const JowRecipeSchema = z
     preparationTime: z.number().nullish(),
     cookingTime: z.number().nullish(),
     origin: Named.nullish(),
+    keywords: z.array(z.string()).optional(),
+    eatingHabitsCompatibility: z
+      .object({ vegetarian: z.boolean().optional(), vegan: z.boolean().optional() })
+      .loose()
+      .nullish(),
   })
   .loose();
 export type JowRecipe = z.infer<typeof JowRecipeSchema>;

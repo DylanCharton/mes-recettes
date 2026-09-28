@@ -6,6 +6,8 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import * as schema from './schema';
 
 export type Db = ReturnType<typeof createDb>;
+/** Transaction Drizzle (synchrone avec better-sqlite3 : callback non async). */
+export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
 /** Ouvre la base (`:memory:` pour les tests) et applique les migrations. */
 export function createDb(filePath: string, migrationsDir: string) {

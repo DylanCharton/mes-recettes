@@ -230,6 +230,7 @@ function ImportValidation({
 
       <RecipeForm
         draft={result.draft}
+        suggestions={result.suggestions}
         submitLabel="Enregistrer"
         onSubmit={async (input) => {
           const recipe = await save.mutateAsync({ ...input, force: force || undefined });

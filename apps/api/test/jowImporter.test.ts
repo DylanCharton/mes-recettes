@@ -215,3 +215,22 @@ describe('JowImporter.parse', () => {
     expect(title).toContain('Poulet au curry');
   });
 });
+
+describe('suggestions à l’import', () => {
+  it('propose cuisine et « rapide » pour le curry, sans saison', () => {
+    const { suggestions } = importer.parse(
+      fixture('poulet-au-curry-89y06dxjhfua0twu16x5'),
+      CURRY_URL,
+    );
+    expect(suggestions).toEqual({ tags: ['indien', 'rapide'], seasons: [] });
+  });
+
+  it('propose automne et hiver pour le poulet rôti au potimarron (CA-F8b)', () => {
+    const { suggestions } = importer.parse(
+      fixture('poulet-roti-au-miel-et-aux-epices-8uzk9vraelo3jgw70jpx'),
+      ROAST_URL,
+    );
+    expect(suggestions.seasons).toEqual(['autumn', 'winter']);
+    expect(suggestions.tags).not.toContain('rapide');
+  });
+});

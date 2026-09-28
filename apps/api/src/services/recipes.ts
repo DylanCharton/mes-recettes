@@ -1,4 +1,18 @@
-import { and, asc, count, desc, eq, or, type SQL } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  exists,
+  inArray,
+  isNotNull,
+  lte,
+  ne,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import {
   ingredientDisplayName,
   ingredientKey,
@@ -9,16 +23,26 @@ import {
   type RecipeDetail,
   type RecipeInputParsed,
   type RecipeList,
+  type RecipeListQuery,
   type RecipePatch,
   type RecipeSource,
+  type Season,
 } from '@mes-recettes/shared';
-import type { Db } from '../db/client';
-import { ingredients, recipeIngredients, recipes, recipeSteps } from '../db/schema';
+import type { Db, Tx } from '../db/client';
+import {
+  ingredients,
+  recipeIngredients,
+  recipes,
+  recipeSeasons,
+  recipeSteps,
+  recipeTags,
+  tags as tagsTable,
+} from '../db/schema';
+import { findOrCreateTags, tagsByRecipe } from './tags';
 
 // Services synchrones : better-sqlite3 est synchrone et les transactions Drizzle associées
 // n'acceptent pas de callback async. Un portage PostgreSQL les passera en async (spec § 11.1).
 
-type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type RecipeRow = typeof recipes.$inferSelect;
 type IngredientRow = typeof recipeIngredients.$inferSelect;
 type StepRow = typeof recipeSteps.$inferSelect;
@@ -131,8 +155,34 @@ function insertChildren(tx: Tx, recipeId: number, lines: LineData[], steps: stri
 const imageUrl = (row: { imagePath: string | null; imageSourceUrl: string | null }) =>
   localImageUrl(row.imagePath) ?? row.imageSourceUrl;
 
-function toDetail(recipe: RecipeRow, lines: IngredientRow[], steps: StepRow[]): RecipeDetail {
+/** Remplace tags et saisons quand la requête les fournit (absents = inchangés). */
+function setTagsAndSeasons(
+  tx: Tx,
+  recipeId: number,
+  input: { tags?: string[]; seasons?: Season[] },
+) {
+  if (input.tags !== undefined) {
+    tx.delete(recipeTags).where(eq(recipeTags.recipeId, recipeId)).run();
+    for (const tagId of findOrCreateTags(tx, input.tags)) {
+      tx.insert(recipeTags).values({ recipeId, tagId }).run();
+    }
+  }
+  if (input.seasons !== undefined) {
+    tx.delete(recipeSeasons).where(eq(recipeSeasons.recipeId, recipeId)).run();
+    for (const season of new Set(input.seasons)) {
+      tx.insert(recipeSeasons).values({ recipeId, season }).run();
+    }
+  }
+}
+
+function toDetail(
+  recipe: RecipeRow,
+  lines: IngredientRow[],
+  steps: StepRow[],
+  extra: Pick<RecipeDetail, 'tags' | 'seasons'>,
+): RecipeDetail {
   return {
+    ...extra,
     id: recipe.id,
     title: recipe.title,
     description: recipe.description,
@@ -189,10 +239,108 @@ export function getRecipe(db: Db | Tx, id: number): RecipeDetail | null {
     .orderBy(asc(recipeSteps.position))
     .all();
 
-  return toDetail(recipe, lines, steps);
+  const seasons = db
+    .select({ season: recipeSeasons.season })
+    .from(recipeSeasons)
+    .where(eq(recipeSeasons.recipeId, id))
+    .all()
+    .map((row) => row.season);
+
+  return toDetail(recipe, lines, steps, {
+    tags: tagsByRecipe(db, [id]).get(id) ?? [],
+    seasons: SEASON_ORDER.filter((season) => seasons.includes(season)),
+  });
 }
 
-export function listRecipes(db: Db, options: { limit: number; offset: number }): RecipeList {
+const SEASON_ORDER: Season[] = ['spring', 'summer', 'autumn', 'winter'];
+
+/** Motif LIKE « contient », avec échappement de %, _ et \ (spec § 18.1). */
+const containsPattern = (value: string) => `%${value.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+const likeContains = (column: SQL, value: string) =>
+  sql`${column} like ${containsPattern(value)} escape '\\'`;
+
+function listConditions(db: Db, query: RecipeListQuery): SQL[] {
+  const conditions: SQL[] = [];
+  const oneRow = { one: sql`1` };
+
+  // Par défaut, les archivées sont masquées (spec F3).
+  if (query.status?.length) conditions.push(inArray(recipes.status, query.status));
+  else conditions.push(ne(recipes.status, 'archived'));
+
+  if (query.favorite) conditions.push(eq(recipes.isFavorite, true));
+  if (query.source) conditions.push(eq(recipes.source, query.source));
+  if (query.maxTime) {
+    conditions.push(
+      and(isNotNull(recipes.totalMinutes), lte(recipes.totalMinutes, query.maxTime))!,
+    );
+  }
+
+  // Texte : chaque mot doit apparaître dans le titre, un ingrédient ou un tag.
+  for (const word of normalizeText(query.q ?? '')
+    .split(' ')
+    .filter(Boolean)) {
+    const inTags = db
+      .select(oneRow)
+      .from(recipeTags)
+      .innerJoin(tagsTable, eq(tagsTable.id, recipeTags.tagId))
+      .where(
+        and(
+          eq(recipeTags.recipeId, recipes.id),
+          likeContains(sql`${tagsTable.normalizedName}`, word),
+        ),
+      );
+    conditions.push(or(likeContains(sql`${recipes.searchText}`, word), exists(inTags))!);
+  }
+
+  // Tags : tous exigés (ET).
+  for (const tagId of query.tags ?? []) {
+    const hasTag = db
+      .select(oneRow)
+      .from(recipeTags)
+      .where(and(eq(recipeTags.recipeId, recipes.id), eq(recipeTags.tagId, tagId)));
+    conditions.push(exists(hasTag));
+  }
+
+  // Saisons : l'une ou l'autre (OU) ; une recette sans saison ne correspond jamais (arbitrage A8).
+  if (query.seasons?.length) {
+    const inSeason = db
+      .select(oneRow)
+      .from(recipeSeasons)
+      .where(
+        and(eq(recipeSeasons.recipeId, recipes.id), inArray(recipeSeasons.season, query.seasons)),
+      );
+    conditions.push(exists(inSeason));
+  }
+
+  // Ingrédient : clé canonique (« poulets » trouve « Poulet (escalope) »).
+  const key = query.ingredient ? ingredientKey(query.ingredient) : '';
+  if (key) {
+    const hasIngredient = db
+      .select(oneRow)
+      .from(recipeIngredients)
+      .innerJoin(ingredients, eq(ingredients.id, recipeIngredients.ingredientId))
+      .where(
+        and(
+          eq(recipeIngredients.recipeId, recipes.id),
+          likeContains(sql`${ingredients.normalizedName}`, key),
+        ),
+      );
+    conditions.push(exists(hasIngredient));
+  }
+
+  return conditions;
+}
+
+const SORTS = {
+  recent: [desc(recipes.createdAt), desc(recipes.id)],
+  // search_text commence par le titre normalisé (sans accents) : « Pâtes » avant « Poulet ».
+  title: [asc(recipes.searchText), asc(recipes.id)],
+  time: [sql`${recipes.totalMinutes} is null`, asc(recipes.totalMinutes), asc(recipes.title)],
+  updated: [desc(recipes.updatedAt), desc(recipes.id)],
+} satisfies Record<RecipeListQuery['sort'], SQL[]>;
+
+export function listRecipes(db: Db, query: RecipeListQuery): RecipeList {
+  const where = and(...listConditions(db, query));
   const rows = db
     .select({
       id: recipes.id,
@@ -204,15 +352,21 @@ export function listRecipes(db: Db, options: { limit: number; offset: number }):
       isFavorite: recipes.isFavorite,
     })
     .from(recipes)
-    .orderBy(desc(recipes.createdAt), desc(recipes.id))
-    .limit(options.limit)
-    .offset(options.offset)
+    .where(where)
+    .orderBy(...SORTS[query.sort])
+    .limit(query.limit)
+    .offset(query.offset)
     .all();
-  const total = db.select({ value: count() }).from(recipes).get()?.value ?? 0;
+  const total = db.select({ value: count() }).from(recipes).where(where).get()?.value ?? 0;
+  const tags = tagsByRecipe(
+    db,
+    rows.map((row) => row.id),
+  );
 
   const items: RecipeCard[] = rows.map(({ imagePath, imageSourceUrl, ...row }) => ({
     ...row,
     imageUrl: imageUrl({ imagePath, imageSourceUrl }),
+    tags: tags.get(row.id) ?? [],
   }));
   return { items, total };
 }
@@ -277,6 +431,7 @@ export function createRecipe(db: Db, input: RecipeInputParsed): RecipeDetail {
       .returning({ id: recipes.id })
       .get();
     insertChildren(tx, id, lines, input.steps);
+    setTagsAndSeasons(tx, id, input);
     return getRecipe(tx, id)!;
   });
 }
@@ -323,19 +478,52 @@ export function updateRecipe(
     tx.delete(recipeIngredients).where(eq(recipeIngredients.recipeId, id)).run();
     tx.delete(recipeSteps).where(eq(recipeSteps.recipeId, id)).run();
     insertChildren(tx, id, lines, input.steps);
+    setTagsAndSeasons(tx, id, input);
 
     return { recipe: getRecipe(tx, id)!, previousImagePath: existing.imagePath };
   });
 }
 
 export function patchRecipe(db: Db, id: number, patch: RecipePatch): RecipeDetail | null {
-  if (Object.keys(patch).length > 0) {
-    db.update(recipes)
-      .set({ ...patch, updatedAt: now() })
+  return db.transaction((tx) => {
+    const { seasons, ...fields } = patch;
+    const updated = tx
+      .update(recipes)
+      .set({ ...fields, updatedAt: now() })
       .where(eq(recipes.id, id))
-      .run();
-  }
-  return getRecipe(db, id);
+      .returning({ id: recipes.id })
+      .get();
+    if (!updated) return null;
+    setTagsAndSeasons(tx, id, { seasons });
+    return getRecipe(tx, id);
+  });
+}
+
+/** Autocomplétion du filtre « ingrédient » : ingrédients utilisés, les plus fréquents d'abord. */
+export function searchIngredients(db: Db, query: string) {
+  const key = ingredientKey(query);
+  return (
+    db
+      .select({
+        id: ingredients.id,
+        name: ingredients.name,
+        recipeCount: count(recipeIngredients.id),
+      })
+      .from(ingredients)
+      .innerJoin(recipeIngredients, eq(recipeIngredients.ingredientId, ingredients.id))
+      .where(key ? likeContains(sql`${ingredients.normalizedName}`, key) : undefined)
+      .groupBy(ingredients.id)
+      // Début du nom, puis début de mot, puis ailleurs (« po » : Poulet… avant Curry en poudre).
+      .orderBy(
+        key
+          ? sql`case when ${ingredients.normalizedName} like ${`${key}%`} then 0 when ${ingredients.normalizedName} like ${`% ${key}%`} then 1 else 2 end`
+          : sql`0`,
+        desc(count(recipeIngredients.id)),
+        asc(ingredients.name),
+      )
+      .limit(20)
+      .all()
+  );
 }
 
 export function deleteRecipe(db: Db, id: number): { imagePath: string | null } | null {

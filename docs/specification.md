@@ -675,7 +675,7 @@ Conventions :
   }>;
   steps: string[];              // max 60
   tools?: string[];
-  tagIds?: number[]; newTags?: string[];
+  tags?: string[];              // noms ; un tag inconnu est créé (unicité insensible casse/accents)
   seasons?: Array<'spring' | 'summer' | 'autumn' | 'winter'>;  // sans doublon, [] = non renseignée
   notes?: string | null;
   status?: 'to_try' | 'validated' | 'archived'; isFavorite?: boolean;
@@ -698,11 +698,11 @@ Règle : si une ligne d'ingrédient arrive **sans** champs structurés, le serve
 
 Réponses :
 
-- `200 { status: "ok", draft: RecipeDraft, provider: "jow", strategies: ["next_data", "json_ld"], warnings: string[] }`
+- `200 { status: "ok", draft: RecipeDraft, provider: "jow", strategies: ["json_ld", "next_data"], warnings: string[], suggestions: { tags, seasons } }`
 - `200 { status: "duplicate", existing: { id, title, imageUrl } , canonicalUrl }` — l'analyse n'est pas faite ; le client peut rappeler avec `{ url, force: true }`.
 - `422 UNSUPPORTED_URL` (domaine non pris en charge), `422 PARSE_FAILED` (avec `details.partial` : titre/image OpenGraph si trouvés), `502 SOURCE_UNREACHABLE`, `504 SOURCE_TIMEOUT`, `429 RATE_LIMITED`.
 
-`RecipeDraft` = `RecipeInput` sans champs personnels (`tagIds`, `notes`, `status`, `isFavorite`, `seasons`) + `suggestedTags: string[]` + `suggestedSeasons: Season[]` + `imageSourceUrl`.
+`RecipeDraft` = `RecipeInput` pré-rempli (sans tags, notes, statut, favori ni saisons). Les propositions sont renvoyées à côté du brouillon : `suggestions: { tags: string[]; seasons: Season[] }`, affichées non cochées.
 
 ### 14.4 Images
 

@@ -11,6 +11,7 @@ import {
 import { cleanText } from '../../lib/text';
 import { extractPage, findSchemaOrgRecipe } from '../html';
 import { mapSchemaOrgRecipe, pickImage } from '../schemaOrg/mapper';
+import { buildSuggestions } from '../suggestions';
 import { parseFailed, type ImportResult, type RecipeImporter } from '../types';
 import { readJowRecipe, type JowConstituent, type JowRecipe } from './nextData';
 
@@ -155,7 +156,7 @@ export class JowImporter implements RecipeImporter {
       );
     }
 
-    const { keywords: _keywords, ...baseDraft } = base ?? { keywords: [] };
+    const { keywords: baseKeywords, ...baseDraft } = base ?? { keywords: [] };
     let draft: RecipeDraft = {
       servings: 2,
       ingredients: [],
@@ -221,6 +222,14 @@ export class JowImporter implements RecipeImporter {
       throw parseFailed({ title: draft.title || undefined, sourceUrl: canonical });
     }
 
-    return { draft, strategies, warnings };
+    const suggestions = buildSuggestions({
+      cuisine: draft.cuisine,
+      totalMinutes: draft.totalMinutes,
+      vegetarian: jow.ok ? (jow.recipe.eatingHabitsCompatibility?.vegetarian ?? false) : false,
+      vegan: jow.ok ? (jow.recipe.eatingHabitsCompatibility?.vegan ?? false) : false,
+      keywords: [...baseKeywords, ...(jow.ok ? (jow.recipe.keywords ?? []) : [])],
+    });
+
+    return { draft, strategies, warnings, suggestions };
   }
 }

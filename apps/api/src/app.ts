@@ -8,8 +8,10 @@ import type { Logger } from './lib/logger';
 import type { FetchFn } from './lib/safeFetch';
 import { imageRoutes } from './routes/images';
 import { importRoutes } from './routes/imports';
+import { ingredientRoutes } from './routes/ingredients';
 import { recipeRoutes } from './routes/recipes';
 import { systemRoutes } from './routes/system';
+import { tagRoutes } from './routes/tags';
 
 /** Dépendances injectées : les tests fournissent une base en mémoire et un `fetch` simulé. */
 export type AppDeps = { db: Db; logger: Logger; images: ImageStore; fetch: FetchFn };
@@ -63,7 +65,9 @@ export function createApp(deps: AppDeps) {
     .route('/api', systemRoutes(deps))
     .route('/api/recipes', recipeRoutes(deps))
     .route('/api/images', imageRoutes(deps))
-    .route('/api/imports', importRoutes(deps));
+    .route('/api/imports', importRoutes(deps))
+    .route('/api/tags', tagRoutes(deps))
+    .route('/api/ingredients', ingredientRoutes(deps));
 }
 
 export type AppType = ReturnType<typeof createApp>;

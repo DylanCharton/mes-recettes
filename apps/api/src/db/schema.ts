@@ -1,6 +1,14 @@
 import { sql } from 'drizzle-orm';
-import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
-import type { Nutrition, RecipeSource, RecipeStatus } from '@mes-recettes/shared';
+import {
+  check,
+  index,
+  integer,
+  primaryKey,
+  real,
+  sqliteTable,
+  text,
+} from 'drizzle-orm/sqlite-core';
+import type { Nutrition, RecipeSource, RecipeStatus, Season } from '@mes-recettes/shared';
 
 // Noms de colonnes en snake_case générés via l'option `casing` (client et drizzle-kit).
 // Dates : texte ISO 8601 UTC, portable vers PostgreSQL (spec § 11.1).
@@ -89,4 +97,49 @@ export const recipeSteps = sqliteTable(
     text: text().notNull(),
   },
   (t) => [index('recipe_step_recipe_id_idx').on(t.recipeId)],
+);
+
+export const tags = sqliteTable('tag', {
+  id: integer().primaryKey({ autoIncrement: true }),
+  name: text().notNull(),
+  /** Clé d'unicité : minuscules, sans accents (« Végétarien » = « vegetarien »). */
+  normalizedName: text().notNull().unique(),
+  createdAt: text()
+    .notNull()
+    .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`),
+});
+
+export const recipeTags = sqliteTable(
+  'recipe_tag',
+  {
+    recipeId: integer()
+      .notNull()
+      .references(() => recipes.id, { onDelete: 'cascade' }),
+    tagId: integer()
+      .notNull()
+      .references(() => tags.id, { onDelete: 'cascade' }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.recipeId, t.tagId] }),
+    index('recipe_tag_tag_id_idx').on(t.tagId),
+  ],
+);
+
+/** Liste fermée de saisons : enum dans le code, pas de table de référence (spec § 12.3). */
+export const recipeSeasons = sqliteTable(
+  'recipe_season',
+  {
+    recipeId: integer()
+      .notNull()
+      .references(() => recipes.id, { onDelete: 'cascade' }),
+    season: text().$type<Season>().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.recipeId, t.season] }),
+    index('recipe_season_season_idx').on(t.season),
+    check(
+      'recipe_season_season_check',
+      sql`${t.season} in ('spring', 'summer', 'autumn', 'winter')`,
+    ),
+  ],
 );

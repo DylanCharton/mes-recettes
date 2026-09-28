@@ -30,6 +30,14 @@ export function RecipeCard({ recipe }: { recipe: RecipeCardData }) {
       </div>
       <div className="flex flex-1 flex-col gap-1 p-3">
         <h2 className="line-clamp-2 font-medium leading-snug">{recipe.title}</h2>
+        {recipe.tags.length > 0 && (
+          <p className="line-clamp-1 text-xs text-zinc-500 dark:text-zinc-400">
+            {recipe.tags
+              .slice(0, 3)
+              .map((tag) => tag.name)
+              .join(' · ')}
+          </p>
+        )}
         {recipe.totalMinutes !== null && (
           <p className="mt-auto flex items-center gap-1 text-sm text-zinc-500 dark:text-zinc-400">
             <Clock size={14} aria-hidden />

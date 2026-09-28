@@ -1,21 +1,43 @@
-import { ChefHat, Clock, ExternalLink, MoreVertical, Pencil, Star, Trash2 } from 'lucide-react';
+import {
+  Check,
+  ChefHat,
+  Clock,
+  CookingPot,
+  ExternalLink,
+  Leaf,
+  MoreVertical,
+  Pencil,
+  Star,
+  Trash2,
+} from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import {
   formatIngredientLine,
+  formatSeasons,
+  RECIPE_STATUSES,
   servingsFactor,
   type RecipeDetail,
   type RecipeIngredient,
+  type Season,
 } from '@mes-recettes/shared';
 import { errorMessage } from '../api/client';
-import { useDeleteRecipe, useRecipe } from '../api/recipes';
+import { useDeleteRecipe, usePatchRecipe, useRecipe } from '../api/recipes';
 import { BackLink } from '../components/BackLink';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { LoadError, Loading } from '../components/QueryStatus';
+import { SEASON_ICONS, SeasonPicker } from '../components/SeasonPicker';
 import { ServingsStepper } from '../components/ServingsStepper';
-import { iconButtonClass } from '../components/ui';
+import { Sheet } from '../components/Sheet';
+import {
+  iconButtonClass,
+  inputClass,
+  primaryButtonClass,
+  secondaryButtonClass,
+} from '../components/ui';
 import { useLocalChecklist } from '../hooks/useLocalChecklist';
-import { DIFFICULTY_LABELS, formatMinutes } from '../lib/format';
+import { useWakeLock, wakeLockSupported } from '../hooks/useWakeLock';
+import { DIFFICULTY_LABELS, formatMinutes, STATUS_LABELS } from '../lib/format';
 
 export function RecipePage() {
   const id = Number(useParams().id);
@@ -35,12 +57,18 @@ function RecipeView({ recipe }: { recipe: RecipeDetail }) {
   const [servings, setServings] = useState(recipe.servings);
   const checklist = useLocalChecklist(recipe.id);
   const factor = servingsFactor(recipe.servings, servings);
+  const [cooking, setCooking] = useState(false);
+  useWakeLock(cooking);
+  // En mode cuisine, la première étape non cochée est mise en avant.
+  const currentStepId = cooking
+    ? recipe.steps.find((step) => !checklist.isChecked('steps', step.id))?.id
+    : undefined;
 
   const mainIngredients = recipe.ingredients.filter((line) => !line.isPantry);
   const pantryIngredients = recipe.ingredients.filter((line) => line.isPantry);
 
   return (
-    <article className="flex flex-col gap-6 pb-8">
+    <article className={`flex flex-col gap-6 pb-8 ${cooking ? 'text-lg' : ''}`}>
       <header className="flex flex-col gap-3">
         {recipe.imageUrl ? (
           <img
@@ -54,24 +82,36 @@ function RecipeView({ recipe }: { recipe: RecipeDetail }) {
           </div>
         )}
 
-        <div className="flex items-start gap-2">
-          <h1 className="flex-1 text-2xl font-semibold leading-tight">
-            {recipe.title}
-            {recipe.isFavorite && (
-              <Star
-                className="ml-2 inline fill-amber-400 text-amber-400"
-                size={20}
-                aria-label="Favori"
-              />
-            )}
-          </h1>
+        <div className="flex items-start gap-1">
+          <h1 className="flex-1 text-2xl leading-tight font-semibold">{recipe.title}</h1>
+          <FavoriteButton recipe={recipe} />
           <RecipeMenu recipe={recipe} />
         </div>
 
         <RecipeMeta recipe={recipe} />
+        <TagsAndSeasons recipe={recipe} />
         {recipe.description && (
           <p className="text-zinc-700 dark:text-zinc-300">{recipe.description}</p>
         )}
+
+        <div className="flex flex-col gap-1">
+          <button
+            type="button"
+            onClick={() => setCooking((value) => !value)}
+            aria-pressed={cooking}
+            className={`${cooking ? primaryButtonClass : secondaryButtonClass} self-start`}
+          >
+            <CookingPot size={18} aria-hidden />
+            {cooking ? 'Quitter le mode cuisine' : 'Mode cuisine'}
+          </button>
+          {cooking && (
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+              {wakeLockSupported
+                ? 'L’écran reste allumé. Touchez une étape quand elle est faite.'
+                : 'Ce navigateur ne permet pas de garder l’écran allumé.'}
+            </p>
+          )}
+        </div>
       </header>
 
       {recipe.ingredients.length > 0 && (
@@ -119,17 +159,19 @@ function RecipeView({ recipe }: { recipe: RecipeDetail }) {
           <ol className="flex flex-col gap-2">
             {recipe.steps.map((step, index) => {
               const done = checklist.isChecked('steps', step.id);
+              const current = step.id === currentStepId;
               return (
                 <li key={step.id}>
                   <button
                     type="button"
                     onClick={() => checklist.toggle('steps', step.id)}
                     aria-pressed={done}
+                    aria-current={current ? 'step' : undefined}
                     className={`flex w-full gap-3 rounded-lg p-3 text-left ${
                       done
                         ? 'text-zinc-400 line-through dark:text-zinc-500'
                         : 'bg-zinc-50 dark:bg-zinc-800/60'
-                    }`}
+                    } ${current ? 'ring-2 ring-accent' : ''}`}
                   >
                     <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-sm font-semibold text-white">
                       {index + 1}
@@ -153,12 +195,7 @@ function RecipeView({ recipe }: { recipe: RecipeDetail }) {
         </button>
       )}
 
-      {recipe.notes && (
-        <section>
-          <h2 className="mb-2 text-lg font-semibold">Notes</h2>
-          <p className="whitespace-pre-line text-zinc-700 dark:text-zinc-300">{recipe.notes}</p>
-        </section>
-      )}
+      <NotesEditor recipe={recipe} />
 
       {recipe.nutrition && <NutritionTable nutrition={recipe.nutrition} />}
 
@@ -295,6 +332,8 @@ function IngredientList(props: {
 function RecipeMenu({ recipe }: { recipe: RecipeDetail }) {
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [editingSeasons, setEditingSeasons] = useState(false);
+  const patch = usePatchRecipe(recipe.id);
   const [error, setError] = useState<string | null>(null);
   const remove = useDeleteRecipe();
   const navigate = useNavigate();
@@ -329,6 +368,39 @@ function RecipeMenu({ recipe }: { recipe: RecipeDetail }) {
             </Link>
             <button
               type="button"
+              className={menuItem}
+              onClick={() => {
+                setOpen(false);
+                setEditingSeasons(true);
+              }}
+            >
+              <Leaf size={18} aria-hidden /> Saisons…
+            </button>
+            <p className="px-4 pt-2 text-xs font-medium tracking-wide text-zinc-500 uppercase">
+              Statut
+            </p>
+            {RECIPE_STATUSES.map((status) => (
+              <button
+                key={status}
+                type="button"
+                role="menuitemradio"
+                aria-checked={recipe.status === status}
+                className={menuItem}
+                onClick={() => {
+                  setOpen(false);
+                  patch.mutate({ status });
+                }}
+              >
+                <Check
+                  size={18}
+                  aria-hidden
+                  className={recipe.status === status ? '' : 'invisible'}
+                />
+                {STATUS_LABELS[status]}
+              </button>
+            ))}
+            <button
+              type="button"
               className={`${menuItem} text-red-600`}
               onClick={() => {
                 setOpen(false);
@@ -340,6 +412,13 @@ function RecipeMenu({ recipe }: { recipe: RecipeDetail }) {
           </div>
         </>
       )}
+
+      <SeasonsSheet
+        key={String(editingSeasons)}
+        recipe={recipe}
+        open={editingSeasons}
+        onClose={() => setEditingSeasons(false)}
+      />
 
       <ConfirmDialog
         open={confirming}
@@ -356,5 +435,131 @@ function RecipeMenu({ recipe }: { recipe: RecipeDetail }) {
         }
       />
     </div>
+  );
+}
+
+function FavoriteButton({ recipe }: { recipe: RecipeDetail }) {
+  const patch = usePatchRecipe(recipe.id);
+  return (
+    <button
+      type="button"
+      className={iconButtonClass}
+      aria-pressed={recipe.isFavorite}
+      aria-label={recipe.isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+      onClick={() => patch.mutate({ isFavorite: !recipe.isFavorite })}
+    >
+      <Star size={22} className={recipe.isFavorite ? 'fill-amber-400 text-amber-400' : ''} />
+    </button>
+  );
+}
+
+function TagsAndSeasons({ recipe }: { recipe: RecipeDetail }) {
+  if (recipe.tags.length === 0 && recipe.seasons.length === 0 && recipe.status === 'validated') {
+    return null;
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      {recipe.status !== 'validated' && (
+        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100">
+          {STATUS_LABELS[recipe.status]}
+        </span>
+      )}
+      {recipe.tags.map((tag) => (
+        <Link
+          key={tag.id}
+          to={`/recipes?tags=${tag.id}`}
+          className="rounded-full bg-accent/10 px-2.5 py-0.5 text-accent"
+        >
+          #{tag.name}
+        </Link>
+      ))}
+      {recipe.seasons.length > 0 && (
+        <span className="inline-flex items-center gap-1 text-zinc-600 dark:text-zinc-300">
+          {recipe.seasons.length < 4 &&
+            recipe.seasons.map((season) => {
+              const Icon = SEASON_ICONS[season];
+              return <Icon key={season} size={15} aria-hidden />;
+            })}
+          {formatSeasons(recipe.seasons)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function NotesEditor({ recipe }: { recipe: RecipeDetail }) {
+  const patch = usePatchRecipe(recipe.id);
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(recipe.notes ?? '');
+
+  if (!editing) {
+    return (
+      <section>
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Notes</h2>
+          <button
+            type="button"
+            className="text-sm text-accent underline"
+            onClick={() => {
+              setText(recipe.notes ?? '');
+              setEditing(true);
+            }}
+          >
+            {recipe.notes ? 'Modifier' : 'Ajouter une note'}
+          </button>
+        </div>
+        {recipe.notes && (
+          <p className="whitespace-pre-line text-zinc-700 dark:text-zinc-300">{recipe.notes}</p>
+        )}
+      </section>
+    );
+  }
+
+  return (
+    <section className="flex flex-col gap-2">
+      <label htmlFor="inline-notes" className="text-lg font-semibold">
+        Notes
+      </label>
+      <textarea
+        id="inline-notes"
+        rows={4}
+        autoFocus
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        className={inputClass}
+      />
+      <div className="flex gap-2">
+        <button
+          type="button"
+          className={primaryButtonClass}
+          disabled={patch.isPending}
+          onClick={() => patch.mutate({ notes: text }, { onSuccess: () => setEditing(false) })}
+        >
+          Enregistrer
+        </button>
+        <button type="button" className={secondaryButtonClass} onClick={() => setEditing(false)}>
+          Annuler
+        </button>
+      </div>
+      {patch.isError && <p className="text-sm text-red-600">{errorMessage(patch.error)}</p>}
+    </section>
+  );
+}
+
+function SeasonsSheet(props: { recipe: RecipeDetail; open: boolean; onClose: () => void }) {
+  const patch = usePatchRecipe(props.recipe.id);
+  const [seasons, setSeasons] = useState<Season[]>(props.recipe.seasons);
+  return (
+    <Sheet open={props.open} title="Saisons" onClose={props.onClose}>
+      <SeasonPicker value={seasons} onChange={setSeasons} />
+      <button
+        type="button"
+        className={primaryButtonClass}
+        disabled={patch.isPending}
+        onClick={() => patch.mutate({ seasons }, { onSuccess: props.onClose })}
+      >
+        Enregistrer
+      </button>
+    </Sheet>
   );
 }
