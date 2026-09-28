@@ -3,13 +3,16 @@ import { HTTPException } from 'hono/http-exception';
 import { requestId } from 'hono/request-id';
 import type { Db } from './db/client';
 import { AppError, errorBody } from './lib/errors';
+import type { ImageStore } from './lib/imageStore';
 import type { Logger } from './lib/logger';
+import { imageRoutes } from './routes/images';
+import { recipeRoutes } from './routes/recipes';
 import { systemRoutes } from './routes/system';
 
-export type AppDeps = { db: Db; logger: Logger };
+export type AppDeps = { db: Db; logger: Logger; images: ImageStore };
 
 export function createApp(deps: AppDeps) {
-  const { logger } = deps;
+  const { logger, images } = deps;
   const app = new Hono();
 
   app.use(requestId());
@@ -42,7 +45,21 @@ export function createApp(deps: AppDeps) {
 
   app.notFound((c) => c.json(errorBody('NOT_FOUND', 'Ressource introuvable'), 404));
 
-  return app.route('/api', systemRoutes(deps));
+  // Noms de fichiers uniques : cache navigateur « immuable » (spec § 14.4).
+  app.get('/images/:file', async (c) => {
+    const image = await images.read(c.req.param('file'));
+    if (!image) return c.json(errorBody('NOT_FOUND', 'Image introuvable'), 404);
+    return c.body(new Uint8Array(image.data), 200, {
+      'Content-Type': image.contentType,
+      'Cache-Control': 'public, max-age=31536000, immutable',
+      'X-Content-Type-Options': 'nosniff',
+    });
+  });
+
+  return app
+    .route('/api', systemRoutes(deps))
+    .route('/api/recipes', recipeRoutes(deps))
+    .route('/api/images', imageRoutes(deps));
 }
 
 export type AppType = ReturnType<typeof createApp>;

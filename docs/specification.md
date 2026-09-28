@@ -377,7 +377,7 @@ Uniquement ce qui sert **aux deux côtés** :
 | Front | **React 19 + Vite** | Stack déjà maîtrisée (Budgetator, gestion-clients) ; écosystème TanStack Query / react-hook-form ; `vite-plugin-pwa` mature | Vue 3 : excellent aussi, mais aucun gain qui justifie de changer d'habitudes |
 | Routage front | React Router (mode déclaratif) | Simple, connu | TanStack Router : plus typé mais plus de concepts |
 | Données front | TanStack Query | Cache, invalidation, états de chargement sans code maison | Redux/Zustand : inutiles (état serveur uniquement) |
-| Formulaires | react-hook-form + résolveur Zod | Schémas Zod partagés = même validation client/serveur | Formik : moins performant |
+| Formulaires | État React simple + validation Zod côté serveur (erreurs par champ renvoyées au formulaire) | Le seul formulaire riche (recette) n’a qu’une dizaine de champs, dont deux zones de texte : une bibliothèque de formulaires n’apporterait rien | react-hook-form : à reconsidérer si les formulaires se multiplient |
 | Style | Tailwind CSS v4 + composants maison (≈ 10) | Rapide, sobre, pas de bibliothèque UI à suivre ; icônes `lucide-react` | shadcn/ui : pertinent mais surdimensionné pour ~10 composants |
 | Backend | **Hono** (+ `@hono/node-server`) | Très léger, standards Web (Request/Response), middlewares intégrés utiles ici (cookies signés, CSRF par Origin, en-têtes de sécurité, limite de taille de corps, fichiers statiques), `@hono/zod-validator`, tests via `app.request()` sans serveur, client typé `hc<AppType>` sans génération de code | Fastify : solide mais plus de plugins à assembler ; Express : vieillissant, typage faible ; NestJS : surdimensionné pour ce projet |
 | Base | **SQLite** via `better-sqlite3` | Fichier unique, zéro administration, très rapide, sauvegarde triviale ; binaires précompilés Windows/Linux | libSQL (ok, mais moins éprouvé) ; `node:sqlite` (encore expérimental) |
@@ -394,7 +394,7 @@ Uniquement ce qui sert **aux deux côtés** :
 
 La migration doit rester « un après-midi de travail », pas une réécriture. Règles :
 
-- Toutes les requêtes passent par Drizzle, écrites avec `await` (le pilote SQLite est synchrone, mais les requêtes Drizzle sont « awaitables » : le code métier reste identique avec un pilote PG asynchrone).
+- Toutes les requêtes passent par Drizzle et sont regroupées dans `services/`. Elles sont **synchrones** (`.get()`, `.all()`, `.run()`), comme le pilote better-sqlite3 et ses transactions ; un portage PG les passera en `async`/`await`, changement mécanique et localisé dans `services/`.
 - Dates stockées en texte ISO 8601 UTC (`2026-09-27T10:00:00.000Z`) et dates de planning en `YYYY-MM-DD` : portable et lisible.
 - Aucune fonctionnalité spécifique SQLite dans le métier (pas de FTS5, pas de JSON1 dans les requêtes). Les colonnes JSON sont lues/écrites comme du texte sérialisé par le code.
 - Identifiants entiers auto-incrémentés (équivalent `serial`/`identity` en PG).
@@ -466,6 +466,7 @@ Index : `(source, external_id)` (non unique, voir § 12.3), `source_url`, `statu
 | `position` | integer | not null, ordre d'affichage |
 | `quantity` | real | null (« sel, poivre ») — quantité pour `recipe.servings` portions |
 | `unit` | text | null ; code canonique (`g`, `ml`, `piece`, `tbsp`, `tsp`, `pinch`, `bunch`, `clove`, `slice`, `can`, `pack`, `sprig`, `leaf`…) ou libellé brut en minuscules si inconnu |
+| `name` | text | **not null**, nom tel qu'écrit dans la ligne (« carottes ») : sert à l'affichage recalculé des portions |
 | `original_text` | text | **not null**, texte d'origine — jamais perdu |
 | `is_optional` | boolean | not null, défaut false |
 | `is_pantry` | boolean | not null, défaut false — « à avoir chez soi » |

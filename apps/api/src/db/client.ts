@@ -17,12 +17,7 @@ export function createDb(filePath: string, migrationsDir: string) {
   sqlite.pragma('journal_mode = WAL');
   sqlite.pragma('foreign_keys = ON');
 
-  const db = drizzle(sqlite, { schema });
-
-  // Tant qu'aucune migration n'a été générée (phase 0), drizzle-kit n'a pas créé de journal.
-  if (fs.existsSync(path.join(migrationsDir, 'meta', '_journal.json'))) {
-    migrate(db, { migrationsFolder: migrationsDir });
-  }
-
+  const db = drizzle(sqlite, { schema, casing: 'snake_case' });
+  migrate(db, { migrationsFolder: migrationsDir });
   return db;
 }

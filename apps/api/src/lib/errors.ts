@@ -1,6 +1,5 @@
+import type { ApiErrorBody, ErrorCode } from '@mes-recettes/shared';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-
-export type ErrorCode = 'VALIDATION_ERROR' | 'NOT_FOUND' | 'INTERNAL_ERROR';
 
 /** Erreur métier transformée en réponse JSON `{ error: { code, message, details } }`. */
 export class AppError extends Error {
@@ -15,6 +14,8 @@ export class AppError extends Error {
   }
 }
 
-export function errorBody(code: ErrorCode, message: string, details?: unknown) {
+export function errorBody(code: ErrorCode, message: string, details?: unknown): ApiErrorBody {
   return { error: { code, message, ...(details !== undefined && { details }) } };
 }
+
+export const recipeNotFound = () => new AppError('NOT_FOUND', 404, 'Cette recette n’existe plus');
