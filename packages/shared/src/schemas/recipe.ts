@@ -34,7 +34,8 @@ const optionalText = (max: number) =>
     .trim()
     .max(max)
     .nullish()
-    .transform((value) => value || null);
+    // Chaîne vide → null ; absent (undefined) reste absent pour ne pas écraser à la modification.
+    .transform((value) => (value === undefined ? undefined : value || null));
 
 export const NutritionSchema = z.object({
   kcal: z.number().min(0).optional(),
@@ -47,9 +48,19 @@ export const NutritionSchema = z.object({
 });
 export type Nutrition = z.infer<typeof NutritionSchema>;
 
+/**
+ * Ligne d’ingrédient. `text` (texte original) est obligatoire ; les champs structurés sont
+ * fournis par un importeur. Sans `name`, le serveur analyse le texte lui-même.
+ */
 export const IngredientInputSchema = z.object({
   text: z.string().trim().min(1).max(LIMITS.ingredientText),
+  name: z.string().trim().min(1).max(LIMITS.ingredientText).optional(),
+  quantity: z.number().positive().max(1e6).nullish(),
+  unit: z.string().trim().min(1).max(30).nullish(),
+  isOptional: z.boolean().optional(),
+  isPantry: z.boolean().optional(),
 });
+export type IngredientInput = z.input<typeof IngredientInputSchema>;
 
 export const RecipeInputSchema = z.object({
   title: z.string().trim().min(1, 'Le titre est obligatoire').max(LIMITS.title),
@@ -67,6 +78,25 @@ export const RecipeInputSchema = z.object({
   status: RecipeStatusSchema.optional(),
   isFavorite: z.boolean().optional(),
   imagePath: z.string().regex(IMAGE_PATH_REGEX).nullish(),
+  // Champs fournis par un import (enregistrés à la création uniquement).
+  nutrition: NutritionSchema.nullish(),
+  nutriScore: z.string().trim().max(3).nullish(),
+  greenScore: z.string().trim().max(3).nullish(),
+  cuisine: optionalText(80),
+  source: RecipeSourceSchema.optional(),
+  sourceUrl: z
+    .url({ protocol: /^https?$/ })
+    .max(2000)
+    .nullish(),
+  externalId: z.string().trim().min(1).max(100).nullish(),
+  sourcePayload: z.unknown().optional(),
+  /** Image distante à télécharger à l’enregistrement (ignorée si `imagePath` est fourni). */
+  imageSourceUrl: z
+    .url({ protocol: /^https$/ })
+    .max(2000)
+    .nullish(),
+  /** « Importer quand même » : ignore la détection de doublon. */
+  force: z.boolean().optional(),
 });
 export type RecipeInput = z.input<typeof RecipeInputSchema>;
 export type RecipeInputParsed = z.output<typeof RecipeInputSchema>;
@@ -120,6 +150,7 @@ export type RecipeDetail = {
   imageUrl: string | null;
   source: RecipeSource;
   sourceUrl: string | null;
+  externalId: string | null;
   importedAt: string | null;
   createdAt: string;
   updatedAt: string;

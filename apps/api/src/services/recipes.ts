@@ -1,14 +1,16 @@
-import { asc, count, desc, eq } from 'drizzle-orm';
+import { and, asc, count, desc, eq, or, type SQL } from 'drizzle-orm';
 import {
   ingredientDisplayName,
   ingredientKey,
   normalizeText,
   parseIngredientLine,
+  type ExistingRecipeSummary,
   type RecipeCard,
   type RecipeDetail,
   type RecipeInputParsed,
   type RecipeList,
   type RecipePatch,
+  type RecipeSource,
 } from '@mes-recettes/shared';
 import type { Db } from '../db/client';
 import { ingredients, recipeIngredients, recipes, recipeSteps } from '../db/schema';
@@ -25,10 +27,31 @@ type StepRow = typeof recipeSteps.$inferSelect;
 type LineData = Pick<
   IngredientRow,
   'originalText' | 'name' | 'quantity' | 'unit' | 'isOptional' | 'isPantry'
-> & { ingredientId: number | null | undefined };
+> & {
+  ingredientId: number | null | undefined;
+  /** Ligne structurée par une source : les parenthèses font partie de l'identité (§ 16.4). */
+  structured?: boolean;
+};
+
+type IngredientLineInput = RecipeInputParsed['ingredients'][number];
 
 const now = () => new Date().toISOString();
-const imageUrl = (imagePath: string | null) => (imagePath ? `/images/${imagePath}` : null);
+const localImageUrl = (imagePath: string | null) => (imagePath ? `/images/${imagePath}` : null);
+
+/** Ligne fournie par un importeur (avec `name`) ou saisie (analysée ici). */
+function toLine(input: IngredientLineInput): LineData {
+  if (!input.name) return parseLine(input.text);
+  return {
+    originalText: input.text,
+    name: input.name,
+    quantity: input.quantity ?? null,
+    unit: input.quantity == null ? null : (input.unit ?? null),
+    isOptional: input.isOptional ?? false,
+    isPantry: input.isPantry ?? false,
+    ingredientId: undefined,
+    structured: true,
+  };
+}
 
 function parseLine(text: string): LineData {
   const parsed = parseIngredientLine(text);
@@ -43,8 +66,8 @@ function parseLine(text: string): LineData {
   };
 }
 
-function findOrCreateIngredient(tx: Tx, name: string): number | null {
-  const key = ingredientKey(name);
+function findOrCreateIngredient(tx: Tx, name: string, keepParentheses: boolean): number | null {
+  const key = ingredientKey(name, { keepParentheses });
   if (!key) return null;
 
   const existing = tx
@@ -56,7 +79,7 @@ function findOrCreateIngredient(tx: Tx, name: string): number | null {
 
   return tx
     .insert(ingredients)
-    .values({ name: ingredientDisplayName(name), normalizedName: key })
+    .values({ name: ingredientDisplayName(name, { keepParentheses }), normalizedName: key })
     .returning({ id: ingredients.id })
     .get().id;
 }
@@ -67,7 +90,7 @@ function recipeFields(input: RecipeInputParsed, lines: LineData[]) {
     totalMinutes ??
     (prepMinutes !== null || cookMinutes !== null ? (prepMinutes ?? 0) + (cookMinutes ?? 0) : null);
 
-  return {
+  const fields = {
     title: input.title,
     description: input.description,
     servings: input.servings,
@@ -75,20 +98,26 @@ function recipeFields(input: RecipeInputParsed, lines: LineData[]) {
     prepMinutes,
     cookMinutes,
     totalMinutes: computedTotal,
-    difficulty: input.difficulty ?? null,
+    difficulty: input.difficulty,
     notes: input.notes,
     tools: input.tools,
     imagePath: input.imagePath ?? null,
     searchText: normalizeText([input.title, ...lines.map((line) => line.name)].join(' ')),
-    ...(input.status && { status: input.status }),
-    ...(input.isFavorite !== undefined && { isFavorite: input.isFavorite }),
+    status: input.status,
+    isFavorite: input.isFavorite,
   };
+  // Un champ absent de la requête n'écrase pas la valeur enregistrée (ex. difficulté importée).
+  return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined)) as {
+    [K in keyof typeof fields]: Exclude<(typeof fields)[K], undefined>;
+  } & { title: string };
 }
 
 function insertChildren(tx: Tx, recipeId: number, lines: LineData[], steps: string[]) {
-  lines.forEach((line, position) => {
+  lines.forEach(({ structured = false, ...line }, position) => {
     const ingredientId =
-      line.ingredientId !== undefined ? line.ingredientId : findOrCreateIngredient(tx, line.name);
+      line.ingredientId !== undefined
+        ? line.ingredientId
+        : findOrCreateIngredient(tx, line.name, structured);
     tx.insert(recipeIngredients)
       .values({ ...line, ingredientId, recipeId, position })
       .run();
@@ -97,6 +126,10 @@ function insertChildren(tx: Tx, recipeId: number, lines: LineData[], steps: stri
     tx.insert(recipeSteps).values({ recipeId, position, text }).run();
   });
 }
+
+/** Image locale, sinon image distante en repli (téléchargement échoué, spec § 19). */
+const imageUrl = (row: { imagePath: string | null; imageSourceUrl: string | null }) =>
+  localImageUrl(row.imagePath) ?? row.imageSourceUrl;
 
 function toDetail(recipe: RecipeRow, lines: IngredientRow[], steps: StepRow[]): RecipeDetail {
   return {
@@ -118,9 +151,10 @@ function toDetail(recipe: RecipeRow, lines: IngredientRow[], steps: StepRow[]): 
     greenScore: recipe.greenScore,
     cuisine: recipe.cuisine,
     imagePath: recipe.imagePath,
-    imageUrl: imageUrl(recipe.imagePath),
+    imageUrl: imageUrl(recipe),
     source: recipe.source,
     sourceUrl: recipe.sourceUrl,
+    externalId: recipe.externalId,
     importedAt: recipe.importedAt,
     createdAt: recipe.createdAt,
     updatedAt: recipe.updatedAt,
@@ -164,6 +198,7 @@ export function listRecipes(db: Db, options: { limit: number; offset: number }):
       id: recipes.id,
       title: recipes.title,
       imagePath: recipes.imagePath,
+      imageSourceUrl: recipes.imageSourceUrl,
       totalMinutes: recipes.totalMinutes,
       status: recipes.status,
       isFavorite: recipes.isFavorite,
@@ -175,20 +210,70 @@ export function listRecipes(db: Db, options: { limit: number; offset: number }):
     .all();
   const total = db.select({ value: count() }).from(recipes).get()?.value ?? 0;
 
-  const items: RecipeCard[] = rows.map(({ imagePath, ...row }) => ({
+  const items: RecipeCard[] = rows.map(({ imagePath, imageSourceUrl, ...row }) => ({
     ...row,
-    imageUrl: imageUrl(imagePath),
+    imageUrl: imageUrl({ imagePath, imageSourceUrl }),
   }));
   return { items, total };
 }
 
+/**
+ * Recette déjà importée depuis la même source : même identifiant externe, sinon même URL
+ * canonique (spec F12).
+ */
+export function findDuplicate(
+  db: Db,
+  source: RecipeSource,
+  externalId: string | null | undefined,
+  sourceUrl?: string | null,
+): ExistingRecipeSummary | null {
+  const conditions: SQL[] = [];
+  if (externalId)
+    conditions.push(and(eq(recipes.source, source), eq(recipes.externalId, externalId))!);
+  if (sourceUrl) conditions.push(eq(recipes.sourceUrl, sourceUrl));
+  if (conditions.length === 0) return null;
+
+  const row = db
+    .select({
+      id: recipes.id,
+      title: recipes.title,
+      imagePath: recipes.imagePath,
+      imageSourceUrl: recipes.imageSourceUrl,
+    })
+    .from(recipes)
+    .where(or(...conditions))
+    .orderBy(asc(recipes.id))
+    .get();
+  return row ? { id: row.id, title: row.title, imageUrl: imageUrl(row) } : null;
+}
+
 export function createRecipe(db: Db, input: RecipeInputParsed): RecipeDetail {
   const timestamp = now();
+  const source = input.source ?? 'manual';
+  // Champs de provenance : écrits une seule fois, à la création.
+  const importFields = {
+    source,
+    sourceUrl: input.sourceUrl ?? null,
+    externalId: input.externalId ?? null,
+    sourcePayload: input.sourcePayload ?? null,
+    imageSourceUrl: input.imageSourceUrl ?? null,
+    importedAt: source === 'manual' ? null : timestamp,
+    nutrition: input.nutrition ?? null,
+    nutriScore: input.nutriScore ?? null,
+    greenScore: input.greenScore ?? null,
+    cuisine: input.cuisine ?? null,
+  };
+
   return db.transaction((tx) => {
-    const lines = input.ingredients.map((line) => parseLine(line.text));
+    const lines = input.ingredients.map(toLine);
     const { id } = tx
       .insert(recipes)
-      .values({ ...recipeFields(input, lines), createdAt: timestamp, updatedAt: timestamp })
+      .values({
+        ...recipeFields(input, lines),
+        ...importFields,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
       .returning({ id: recipes.id })
       .get();
     insertChildren(tx, id, lines, input.steps);
@@ -224,9 +309,9 @@ export function updateRecipe(
       reusable.set(row.originalText, [...(reusable.get(row.originalText) ?? []), row]);
     }
 
-    const lines = input.ingredients.map(({ text }): LineData => {
-      const kept = reusable.get(text)?.shift();
-      if (!kept) return parseLine(text);
+    const lines = input.ingredients.map((line): LineData => {
+      const kept = reusable.get(line.text)?.shift();
+      if (!kept) return toLine(line);
       const { originalText, name, quantity, unit, isOptional, isPantry, ingredientId } = kept;
       return { originalText, name, quantity, unit, isOptional, isPantry, ingredientId };
     });

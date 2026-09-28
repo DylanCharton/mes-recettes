@@ -5,11 +5,14 @@ import type { Db } from './db/client';
 import { AppError, errorBody } from './lib/errors';
 import type { ImageStore } from './lib/imageStore';
 import type { Logger } from './lib/logger';
+import type { FetchFn } from './lib/safeFetch';
 import { imageRoutes } from './routes/images';
+import { importRoutes } from './routes/imports';
 import { recipeRoutes } from './routes/recipes';
 import { systemRoutes } from './routes/system';
 
-export type AppDeps = { db: Db; logger: Logger; images: ImageStore };
+/** Dépendances injectées : les tests fournissent une base en mémoire et un `fetch` simulé. */
+export type AppDeps = { db: Db; logger: Logger; images: ImageStore; fetch: FetchFn };
 
 export function createApp(deps: AppDeps) {
   const { logger, images } = deps;
@@ -59,7 +62,8 @@ export function createApp(deps: AppDeps) {
   return app
     .route('/api', systemRoutes(deps))
     .route('/api/recipes', recipeRoutes(deps))
-    .route('/api/images', imageRoutes(deps));
+    .route('/api/images', imageRoutes(deps))
+    .route('/api/imports', importRoutes(deps));
 }
 
 export type AppType = ReturnType<typeof createApp>;

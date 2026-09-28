@@ -6,6 +6,7 @@ import { afterEach } from 'vitest';
 import { createApp } from '../src/app';
 import { createDb } from '../src/db/client';
 import { createImageStore } from '../src/lib/imageStore';
+import type { FetchFn } from '../src/lib/safeFetch';
 import { MIGRATIONS_DIR } from '../src/paths';
 
 const tempDirs: string[] = [];
@@ -14,13 +15,23 @@ afterEach(() => {
   for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-export function createTestContext() {
+/** `fetch` par défaut des tests : tout appel réseau non simulé échoue bruyamment. */
+const noNetwork: FetchFn = async (url) => {
+  throw new Error(`Appel réseau inattendu dans un test : ${String(url)}`);
+};
+
+export function createTestContext(options: { fetch?: FetchFn } = {}) {
   const imagesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mes-recettes-'));
   tempDirs.push(imagesDir);
 
   const db = createDb(':memory:', MIGRATIONS_DIR);
   const images = createImageStore(imagesDir);
-  const app = createApp({ db, logger: pino({ level: 'silent' }), images });
+  const app = createApp({
+    db,
+    logger: pino({ level: 'silent' }),
+    images,
+    fetch: options.fetch ?? noNetwork,
+  });
   return { app, db, images, imagesDir };
 }
 

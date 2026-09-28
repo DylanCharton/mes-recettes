@@ -11,7 +11,7 @@ const env = loadEnv();
 const logger = createLogger({ level: env.LOG_LEVEL, pretty: env.NODE_ENV === 'development' });
 const db = createDb(path.join(env.DATA_DIR, 'app.db'), MIGRATIONS_DIR);
 const images = createImageStore(path.join(env.DATA_DIR, 'images'));
-const app = createApp({ db, logger, images });
+const app = createApp({ db, logger, images, fetch: globalThis.fetch });
 
 serve({ fetch: app.fetch, port: env.PORT }, ({ port }) => {
   logger.info({ port, dataDir: env.DATA_DIR }, 'API démarrée');

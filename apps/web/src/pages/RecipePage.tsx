@@ -160,16 +160,9 @@ function RecipeView({ recipe }: { recipe: RecipeDetail }) {
         </section>
       )}
 
-      {recipe.sourceUrl && (
-        <a
-          href={recipe.sourceUrl}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="inline-flex items-center gap-1 self-start text-sm text-zinc-500 underline dark:text-zinc-400"
-        >
-          Voir la recette d’origine <ExternalLink size={14} aria-hidden />
-        </a>
-      )}
+      {recipe.nutrition && <NutritionTable nutrition={recipe.nutrition} />}
+
+      <SourceInfo recipe={recipe} />
     </article>
   );
 }
@@ -181,7 +174,12 @@ function RecipeMeta({ recipe }: { recipe: RecipeDetail }) {
   ].filter(Boolean);
   const difficulty = recipe.difficulty !== null ? DIFFICULTY_LABELS[recipe.difficulty] : undefined;
 
-  if (recipe.totalMinutes === null && !difficulty) return null;
+  const scores = [
+    recipe.nutriScore && `Nutri-Score ${recipe.nutriScore}`,
+    recipe.greenScore && `Green-Score ${recipe.greenScore}`,
+  ].filter(Boolean);
+
+  if (recipe.totalMinutes === null && !difficulty && scores.length === 0) return null;
   return (
     <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-zinc-600 dark:text-zinc-300">
       {recipe.totalMinutes !== null && (
@@ -192,6 +190,69 @@ function RecipeMeta({ recipe }: { recipe: RecipeDetail }) {
         </span>
       )}
       {difficulty && <span>· {difficulty}</span>}
+      {scores.map((score) => (
+        <span
+          key={String(score)}
+          className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs dark:bg-zinc-800"
+        >
+          {score}
+        </span>
+      ))}
+    </p>
+  );
+}
+
+const NUTRIENT_LABELS: [keyof NonNullable<RecipeDetail['nutrition']>, string, string][] = [
+  ['kcal', 'Énergie', 'kcal'],
+  ['protein', 'Protéines', 'g'],
+  ['carbs', 'Glucides', 'g'],
+  ['fat', 'Lipides', 'g'],
+  ['fiber', 'Fibres', 'g'],
+  ['sugar', 'Sucres', 'g'],
+  ['salt', 'Sel', 'g'],
+];
+
+function NutritionTable({ nutrition }: { nutrition: NonNullable<RecipeDetail['nutrition']> }) {
+  const rows = NUTRIENT_LABELS.filter(([key]) => nutrition[key] !== undefined);
+  if (rows.length === 0) return null;
+  return (
+    <section>
+      <h2 className="mb-2 text-lg font-semibold">Nutrition (par portion)</h2>
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-4">
+        {rows.map(([key, label, unit]) => (
+          <div
+            key={key}
+            className="flex justify-between gap-2 border-b border-zinc-100 py-1 dark:border-zinc-800"
+          >
+            <dt className="text-zinc-600 dark:text-zinc-400">{label}</dt>
+            <dd className="font-medium tabular-nums">
+              {nutrition[key]!.toLocaleString('fr-FR')} {unit}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+function SourceInfo({ recipe }: { recipe: RecipeDetail }) {
+  if (!recipe.sourceUrl && !recipe.importedAt) return null;
+  const label = recipe.source === 'jow' ? 'Voir sur Jow' : 'Voir la recette d’origine';
+  return (
+    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400">
+      {recipe.sourceUrl && (
+        <a
+          href={recipe.sourceUrl}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="inline-flex items-center gap-1 underline"
+        >
+          {label} <ExternalLink size={14} aria-hidden />
+        </a>
+      )}
+      {recipe.importedAt && (
+        <span>Importée le {new Date(recipe.importedAt).toLocaleDateString('fr-FR')}</span>
+      )}
     </p>
   );
 }

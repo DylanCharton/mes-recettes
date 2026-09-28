@@ -843,14 +843,14 @@ type ImportResult = {
 | `tools` | `requiredTools[].name` | `tool[]` si présent |
 | `nutrition` | `nutritionalFacts[]` (`ENERC`→kcal, `FAT`, `CHOAVL`, `PRO`, `FIBTG`) | `nutrition.*Content` (« 8 g » → 8) |
 | `nutriScore` / `greenScore` | `nutritionalRatingScores[id=nutriscore/greenscore].score` | — |
-| `cuisine` | `origin.name` | `recipeCuisine` |
+| `cuisine` | `origin.name` (repli) | `recipeCuisine` (prioritaire : libellé vérifié, « Indienne ») |
 | `suggestedSeasons` | `keywords[]` (« automne », « hiver »…) | `keywords` (chaîne séparée par virgules) |
 | `imageSourceUrl` | — | image au format `1024x768` si présente, sinon la première |
 | `sourceUrl` | — | `<link rel="canonical">` sinon URL normalisée |
 | `externalId` | — | dernier segment du chemin (depuis l'URL, étape 3) |
 | `sourcePayload` | `recipe` (sans `similarRecipes`) | objet JSON-LD si pas de `__NEXT_DATA__` |
 
-Table des unités Jow (extrait, à compléter au fil des fixtures) : `Kilogramme` → g (×1000), `Gramme` → g, `Litre` → ml (×1000), `Centilitre` → ml (×10), `Millilitre` → ml, `Pièce` → `piece`, `Cuillère à soupe` → `tbsp`, `Cuillère à café` → `tsp`, `Bouquet` → `bunch`, `Pincée` → `pinch`, `Gousse` → `clove`, `Tranche` → `slice`, `Boîte` → `can`, `Sachet` → `pack`, `Brin` → `sprig`, `Feuille` → `leaf`. Unité inconnue → libellé en minuscules + avertissement dans les logs (pas d'échec).
+Table des unités Jow (extrait, à compléter au fil des fixtures) : `Kilogramme` → g (×1000), `Gramme` → g, `Litre` → ml (×1000), `Centilitre` → ml (×10), `Millilitre` → ml, `Pièce` → `piece`, `Cuillère à soupe` → `tbsp`, `Cuillère à café` → `tsp`, `Bouquet` → `bunch`, `Pincée` → `pinch`, `Gousse` → `clove`, `Tranche` → `slice`, `Boîte` → `can`, `Sachet` → `pack`, `Brin` → `sprig`, `Feuille` → `leaf`. Unité inconnue → nom français de l'unité en minuscules (« Noisette » → `noisette` ; les abréviations Jow sont parfois en anglais : « dab »), sans conversion ni échec.
 
 ### 15.6 Détection d'un changement de structure Jow
 

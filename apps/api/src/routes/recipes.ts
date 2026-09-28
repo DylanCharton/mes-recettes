@@ -3,10 +3,13 @@ import { z } from 'zod';
 import { RecipeInputSchema, RecipeListQuerySchema, RecipePatchSchema } from '@mes-recettes/shared';
 import type { AppDeps } from '../app';
 import { AppError, recipeNotFound } from '../lib/errors';
+import { importerForSource } from '../importers/registry';
 import { validate } from '../lib/validate';
+import { downloadImage } from '../services/imports';
 import {
   createRecipe,
   deleteRecipe,
+  findDuplicate,
   getRecipe,
   listRecipes,
   patchRecipe,
@@ -15,7 +18,8 @@ import {
 
 const IdParamSchema = z.object({ id: z.coerce.number().int().positive() });
 
-export function recipeRoutes({ db, images }: AppDeps) {
+export function recipeRoutes(deps: AppDeps) {
+  const { db, images } = deps;
   const assertImageExists = (imagePath: string | null | undefined) => {
     if (imagePath && !images.exists(imagePath)) {
       throw new AppError('VALIDATION_ERROR', 400, 'Image introuvable, renvoyez-la');
@@ -31,10 +35,27 @@ export function recipeRoutes({ db, images }: AppDeps) {
       if (!recipe) throw recipeNotFound();
       return c.json(recipe);
     })
-    .post('/', validate('json', RecipeInputSchema), (c) => {
+    .post('/', validate('json', RecipeInputSchema), async (c) => {
       const input = c.req.valid('json');
       assertImageExists(input.imagePath);
-      return c.json(createRecipe(db, input), 201);
+
+      const importer = input.source ? importerForSource(input.source) : undefined;
+      if (importer && !input.force) {
+        const existing = findDuplicate(db, importer.source, input.externalId, input.sourceUrl);
+        if (existing) {
+          throw new AppError('DUPLICATE_RECIPE', 409, 'Cette recette existe déjà', { existing });
+        }
+      }
+
+      // Image distante téléchargée depuis les seuls hôtes de la source (jamais une URL arbitraire).
+      let imagePath = input.imagePath ?? null;
+      if (!imagePath && importer && input.imageSourceUrl) {
+        imagePath = await downloadImage(deps, input.imageSourceUrl, importer.imageHosts);
+      }
+
+      const recipe = createRecipe(db, { ...input, imagePath });
+      deps.logger.info({ recipeId: recipe.id, source: recipe.source }, 'recipe.created');
+      return c.json(recipe, 201);
     })
     .put(
       '/:id',

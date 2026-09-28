@@ -3,7 +3,9 @@ import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
   formatQuantity,
   parseIngredientLine,
+  type IngredientInput,
   type RecipeDetail,
+  type RecipeDraft,
   type RecipeInput,
 } from '@mes-recettes/shared';
 import { ApiError, errorMessage } from '../api/client';
@@ -34,6 +36,46 @@ const lines = (text: string) =>
     .map((line) => line.trim())
     .filter(Boolean);
 
+type StructuredLines = Map<string, IngredientInput>;
+
+function fromDraft(draft: RecipeDraft): FormState {
+  return {
+    title: draft.title ?? '',
+    description: draft.description ?? '',
+    servings: String(draft.servings ?? 2),
+    prepMinutes: toText(draft.prepMinutes ?? null),
+    cookMinutes: toText(draft.cookMinutes ?? null),
+    totalMinutes: toText(draft.totalMinutes ?? null),
+    ingredientsText: (draft.ingredients ?? []).map((line) => line.text).join('\n'),
+    stepsText: (draft.steps ?? []).join('\n'),
+    toolsText: (draft.tools ?? []).join(', '),
+    notes: draft.notes ?? '',
+    imagePath: null,
+    imageUrl: draft.imageSourceUrl ?? null,
+  };
+}
+
+/** Champs d'un brouillon d'import non affichés dans le formulaire, renvoyés tels quels. */
+function draftExtras(draft: RecipeDraft | undefined): Partial<RecipeInput> {
+  if (!draft) return {};
+  const {
+    title: _title,
+    description: _description,
+    servings: _servings,
+    prepMinutes: _prep,
+    cookMinutes: _cook,
+    totalMinutes: _total,
+    ingredients: _ingredients,
+    steps: _steps,
+    tools: _tools,
+    notes: _notes,
+    imagePath: _imagePath,
+    imageSourceUrl: _imageSourceUrl,
+    ...extras
+  } = draft;
+  return extras;
+}
+
 function initialState(recipe?: RecipeDetail): FormState {
   return {
     title: recipe?.title ?? '',
@@ -51,15 +93,25 @@ function initialState(recipe?: RecipeDetail): FormState {
   };
 }
 
-function toInput(state: FormState): RecipeInput {
+function toInput(
+  state: FormState,
+  draft: RecipeDraft | undefined,
+  structured: StructuredLines,
+): RecipeInput {
+  // L'image distante du brouillon n'est gardée que si l'utilisateur ne l'a ni retirée ni remplacée.
+  const keepRemoteImage =
+    !state.imagePath && !!draft?.imageSourceUrl && state.imageUrl === draft.imageSourceUrl;
   return {
+    ...draftExtras(draft),
+    imageSourceUrl: keepRemoteImage ? draft?.imageSourceUrl : null,
     title: state.title,
     description: state.description,
     servings: Number(state.servings),
     prepMinutes: toNumber(state.prepMinutes),
     cookMinutes: toNumber(state.cookMinutes),
     totalMinutes: toNumber(state.totalMinutes),
-    ingredients: lines(state.ingredientsText).map((text) => ({ text })),
+    // Une ligne inchangée du brouillon garde ses données structurées (quantité exacte, placard…).
+    ingredients: lines(state.ingredientsText).map((text) => structured.get(text) ?? { text }),
     steps: lines(state.stepsText),
     tools: state.toolsText
       .split(',')
@@ -72,12 +124,21 @@ function toInput(state: FormState): RecipeInput {
 
 type Props = {
   recipe?: RecipeDetail;
+  /** Brouillon d'import ou pré-remplissage (prioritaire sur `recipe`). */
+  draft?: RecipeDraft;
   submitLabel: string;
   onSubmit: (input: RecipeInput) => Promise<unknown>;
 };
 
-export function RecipeForm({ recipe, submitLabel, onSubmit }: Props) {
-  const [state, setState] = useState(() => initialState(recipe));
+export function RecipeForm({ recipe, draft, submitLabel, onSubmit }: Props) {
+  const [state, setState] = useState(() => (draft ? fromDraft(draft) : initialState(recipe)));
+  const structured = useMemo<StructuredLines>(
+    () =>
+      new Map(
+        (draft?.ingredients ?? []).filter((line) => line.name).map((line) => [line.text, line]),
+      ),
+    [draft],
+  );
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<{ message: string; fields: string[] } | null>(null);
@@ -104,7 +165,7 @@ export function RecipeForm({ recipe, submitLabel, onSubmit }: Props) {
     setSubmitting(true);
     setError(null);
     try {
-      await onSubmit(toInput(state));
+      await onSubmit(toInput(state, draft, structured));
     } catch (err) {
       const fields =
         err instanceof ApiError && Array.isArray(err.details)
@@ -206,7 +267,7 @@ export function RecipeForm({ recipe, submitLabel, onSubmit }: Props) {
           onChange={(e) => set('ingredientsText', e.target.value)}
           className={inputClass}
         />
-        <IngredientPreview text={state.ingredientsText} />
+        <IngredientPreview text={state.ingredientsText} structured={structured} />
       </Field>
 
       <Field label="Étapes" htmlFor="steps" hint="Une étape par ligne.">
@@ -295,21 +356,37 @@ function NumberField(props: {
   );
 }
 
-function IngredientPreview({ text }: { text: string }) {
+function IngredientPreview({ text, structured }: { text: string; structured: StructuredLines }) {
   const parsed = useMemo(
-    () => lines(text).map((line) => ({ line, ...parseIngredientLine(line) })),
-    [text],
+    () =>
+      lines(text).map((line) => {
+        const known = structured.get(line);
+        if (!known) return { line, ...parseIngredientLine(line), isPantry: false };
+        return {
+          line,
+          quantity: known.quantity ?? null,
+          unit: known.unit ?? null,
+          name: known.name ?? line,
+          isOptional: known.isOptional ?? false,
+          isPantry: known.isPantry ?? false,
+        };
+      }),
+    [text, structured],
   );
   if (parsed.length === 0) return null;
 
   return (
     <ul className="mt-2 flex flex-col gap-1 text-sm" aria-label="Analyse des ingrédients">
-      {parsed.map(({ line, quantity, unit, name }, index) => (
+      {parsed.map(({ line, quantity, unit, name, isOptional, isPantry }, index) => (
         <li key={`${index}-${line}`} className="flex gap-2">
           <span className="w-24 shrink-0 text-right font-medium tabular-nums text-accent">
             {quantity === null ? '—' : formatQuantity(quantity, unit)}
           </span>
-          <span className="text-zinc-700 dark:text-zinc-300">{name}</span>
+          <span className="text-zinc-700 dark:text-zinc-300">
+            {name}
+            {isPantry && <Badge>à avoir chez soi</Badge>}
+            {isOptional && !/facultati/i.test(name) && <Badge>facultatif</Badge>}
+          </span>
         </li>
       ))}
     </ul>
@@ -352,5 +429,13 @@ function PhotoField(props: {
         onChange={(e) => props.onPick(e.target.files?.[0])}
       />
     </label>
+  );
+}
+
+function Badge({ children }: { children: ReactNode }) {
+  return (
+    <span className="ml-2 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+      {children}
+    </span>
   );
 }
