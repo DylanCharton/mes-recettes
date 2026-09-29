@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { ImportPreviewResponse, RecipeDetail, RecipeDraft } from '@mes-recettes/shared';
 import { describe, expect, it, vi } from 'vitest';
 import type { FetchFn } from '../src/lib/safeFetch';
-import { extractUrl } from '../src/services/imports';
+import { extractUrl } from '@mes-recettes/shared';
 import { createTestContext, FAKE_JPEG, jsonRequest } from './helpers';
 
 const CURRY_URL = 'https://jow.fr/fr/recipes/poulet-au-curry-89y06dxjhfua0twu16x5';

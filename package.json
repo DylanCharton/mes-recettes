@@ -8,12 +8,13 @@
   },
   "scripts": {
     "dev": "pnpm --parallel --filter \"./apps/*\" dev",
-    "build": "pnpm --filter @mes-recettes/web build",
+    "build": "pnpm --filter @mes-recettes/web build && pnpm --filter @mes-recettes/api build",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "start": "pnpm --filter @mes-recettes/api start"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

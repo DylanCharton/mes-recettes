@@ -1,0 +1,37 @@
+# ============================================================================
+#  Mes recettes — stack de production (VPS, pile « edge » partagée)
+#
+#  Déposé dans /srv/mes-recettes/compose.yml, avec un .env à côté (voir
+#  deploy/README.md). Aucun port publié : seul edge-caddy est exposé.
+# ============================================================================
+name: mes-recettes
+
+services:
+  app:
+    image: ${IMAGE:?IMAGE manquant dans .env (ex. ghcr.io/<owner>/mes-recettes:<sha>)}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PUBLIC_URL: https://recettes.tojicode.fr
+      AUTH_PASSWORD_HASH: ${AUTH_PASSWORD_HASH:?AUTH_PASSWORD_HASH manquant dans .env}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET manquant dans .env}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      # Toute la bibliothèque : app.db (SQLite) + images/. C'est ce volume qu'on sauvegarde.
+      - data:/data
+    networks:
+      edge:
+        aliases: [mes-recettes]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  edge:
+    external: true
+    name: edge
+
+volumes:
+  data:

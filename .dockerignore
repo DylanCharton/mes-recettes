@@ -1,0 +1,10 @@
+**/node_modules
+**/dist
+data
+.env
+.git
+.vite
+coverage
+docs
+apps/api/test
+**/*.log

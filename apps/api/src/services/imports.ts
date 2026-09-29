@@ -1,4 +1,4 @@
-import type { ImportPreviewResponse } from '@mes-recettes/shared';
+import { extractUrl, type ImportPreviewResponse } from '@mes-recettes/shared';
 import type { AppDeps } from '../app';
 import { findImporter } from '../importers/registry';
 import { AppError } from '../lib/errors';
@@ -7,12 +7,6 @@ import { findDuplicate } from './recipes';
 
 const MAX_HTML_BYTES = 3 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
-
-/** Première URL http(s) d'un texte partagé, sans la ponctuation finale. */
-export function extractUrl(text: string): string | null {
-  const match = /https?:\/\/[^\s<>"'«»]+/i.exec(text);
-  return match ? match[0].replace(/[).,;:!?]+$/, '') : null;
-}
 
 const unsupported = () =>
   new AppError(

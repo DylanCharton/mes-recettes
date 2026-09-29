@@ -1,0 +1,22 @@
+# ============================================================================
+#  vhost Mes recettes — recettes.tojicode.fr
+#  À déposer dans /srv/edge/sites/recettes.caddy, puis `caddy reload`.
+#
+#  Un seul upstream : le processus Node sert l'API, les images et le front.
+#  La CSP et les en-têtes applicatifs sont posés par l'application ; le snippet
+#  security_headers ajoute HSTS et retire l'en-tête Server.
+# ============================================================================
+recettes.tojicode.fr {
+	encode zstd gzip
+
+	import security_headers
+	import site_log recettes
+
+	# Le partage Android et les imports envoient des requêtes courtes : pas de
+	# limite de corps ici, l'application borne elle-même (1 Mo JSON, 5 Mo image).
+	reverse_proxy mes-recettes:3000 {
+		health_uri /api/health
+		health_interval 10s
+		health_timeout 5s
+	}
+}

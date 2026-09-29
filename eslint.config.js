@@ -10,7 +10,7 @@ export default tseslint.config(
   js.configs.recommended,
   tseslint.configs.recommended,
   {
-    files: ['apps/api/**/*.ts', 'packages/**/*.ts', '*.js'],
+    files: ['apps/api/**/*.ts', 'packages/**/*.ts', '**/*.{js,mjs}'],
     languageOptions: { globals: globals.node },
   },
   {
@@ -26,6 +26,11 @@ export default tseslint.config(
       ],
       'no-console': ['error', { allow: ['error'] }],
     },
+  },
+  {
+    // Scripts d'exploitation lancés à la main : la sortie console est leur interface.
+    files: ['**/scripts/**', '**/build.mjs'],
+    rules: { 'no-console': 'off' },
   },
   prettier,
 );

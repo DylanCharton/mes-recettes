@@ -5,6 +5,7 @@ import pino from 'pino';
 import { afterEach } from 'vitest';
 import { createApp } from '../src/app';
 import { createDb } from '../src/db/client';
+import type { AuthConfig } from '../src/env';
 import { createImageStore } from '../src/lib/imageStore';
 import type { FetchFn } from '../src/lib/safeFetch';
 import { MIGRATIONS_DIR } from '../src/paths';
@@ -20,7 +21,9 @@ const noNetwork: FetchFn = async (url) => {
   throw new Error(`Appel réseau inattendu dans un test : ${String(url)}`);
 };
 
-export function createTestContext(options: { fetch?: FetchFn } = {}) {
+export function createTestContext(
+  options: { fetch?: FetchFn; auth?: AuthConfig; webDist?: string } = {},
+) {
   const imagesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mes-recettes-'));
   tempDirs.push(imagesDir);
 
@@ -31,8 +34,16 @@ export function createTestContext(options: { fetch?: FetchFn } = {}) {
     logger: pino({ level: 'silent' }),
     images,
     fetch: options.fetch ?? noNetwork,
+    auth: options.auth ?? { enabled: false },
+    webDist: options.webDist,
   });
-  return { app, db, images, imagesDir };
+  // Comme un navigateur sur la même origine : le middleware CSRF exige Origin ou Sec-Fetch-Site.
+  const request = (input: string, init: RequestInit = {}) => {
+    const headers = new Headers(init.headers);
+    if (!headers.has('sec-fetch-site')) headers.set('sec-fetch-site', 'same-origin');
+    return app.request(input, { ...init, headers });
+  };
+  return { app: { request, raw: app }, db, images, imagesDir };
 }
 
 export function createTestApp() {

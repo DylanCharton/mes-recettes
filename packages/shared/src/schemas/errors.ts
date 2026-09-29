@@ -1,5 +1,7 @@
 export type ErrorCode =
   | 'VALIDATION_ERROR'
+  | 'UNAUTHORIZED'
+  | 'INVALID_CREDENTIALS'
   | 'NOT_FOUND'
   | 'DUPLICATE_RECIPE'
   | 'TAG_EXISTS'

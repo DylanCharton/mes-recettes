@@ -9,3 +9,4 @@ export * from './schemas/errors';
 export * from './schemas/import';
 export * from './seasons';
 export * from './schemas/tag';
+export * from './url';

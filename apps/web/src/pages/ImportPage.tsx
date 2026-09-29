@@ -1,6 +1,6 @@
 import { AlertTriangle, ClipboardPaste, ExternalLink, Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import type { ImportPreviewResponse, PartialImport } from '@mes-recettes/shared';
 import { ApiError, errorMessage } from '../api/client';
 import { useImportPreview } from '../api/imports';
@@ -47,6 +47,7 @@ export function ImportPage() {
     analyse(url);
   }
 
+  const shareError = (useLocation().state as { shareError?: string } | null)?.shareError;
   const result = preview.data;
 
   if (result?.status === 'ok' && !preview.isPending) {
@@ -125,6 +126,15 @@ export function ImportPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {shareError && !result && !preview.isError && (
+        <p
+          role="alert"
+          className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-100"
+        >
+          {shareError} Collez le lien de la recette ci-dessus.
+        </p>
       )}
 
       {preview.isError && (
