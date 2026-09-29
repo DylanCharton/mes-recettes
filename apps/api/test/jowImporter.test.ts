@@ -47,6 +47,24 @@ describe('JowImporter.canHandle / identify', () => {
   });
 
   it.each([
+    'https://app.jow.com/EC0U?action=recipe&recipeId=69f86dad46828277dd71568b&source=jow',
+    'https://app.jow.com/EC0U?recipeId=69F86DAD46828277DD71568B',
+  ])('reconnaît le lien de partage de l’app %s', (raw) => {
+    const url = new URL(raw);
+    expect(importer.canHandle(url)).toBe(true);
+    expect(importer.identify(url)).toEqual({
+      fetchUrl: 'https://jow.fr/fr/recipes/69f86dad46828277dd71568b',
+      canonicalUrl: 'https://jow.fr/recipes/69f86dad46828277dd71568b',
+      externalId: null,
+    });
+  });
+
+  it.each([
+    'https://app.jow.com/',
+    'https://app.jow.com/EC0U?action=menu&recipeId=69f86dad46828277dd71568b',
+    'https://app.jow.com/EC0U?action=recipe&recipeId=../../admin',
+    'https://app.jow.com.evil.com/EC0U?action=recipe&recipeId=69f86dad46828277dd71568b',
+    'https://jow.com/recipes/cobb-salad-8ohwfou4ilkid6l901ss',
     'https://jow.fr/fr/recipes',
     'https://jow.fr/fr/recipes/poulet-au-curry',
     'https://jow.fr/fr/help?question=x',

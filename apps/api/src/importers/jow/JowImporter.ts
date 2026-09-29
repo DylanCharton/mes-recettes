@@ -19,6 +19,18 @@ const PAGE_HOSTS = ['jow.fr', 'www.jow.fr'];
 // /fr/recipes/poulet-au-curry-89y06dxjhfua0twu16x5, /recipes/89y06dxjhfua0twu16x5/print…
 const RECIPE_PATH =
   /^\/(?:[a-z]{2}\/)?recipes\/(?:([a-z0-9-]+)-)?([a-z0-9]{16,24})(?:\/print)?\/?$/;
+// Lien partagé par l'app Jow : https://app.jow.com/EC0U?action=recipe&recipeId=69f86dad46828277dd71568b
+// jow.fr/fr/recipes/<recipeId> redirige (308) vers la fiche : app.jow.com n'est jamais téléchargé.
+const SHARE_HOSTS = ['app.jow.com'];
+const SHARE_RECIPE_ID = /^[a-z0-9]{16,24}$/;
+
+/** Identifiant de recette d'un lien de partage de l'app Jow, sinon null. */
+function shareRecipeId(url: URL): string | null {
+  if (!SHARE_HOSTS.includes(url.hostname)) return null;
+  const action = url.searchParams.get('action');
+  const id = url.searchParams.get('recipeId')?.toLowerCase() ?? '';
+  return (action === null || action === 'recipe') && SHARE_RECIPE_ID.test(id) ? id : null;
+}
 
 const NUTRIENTS: Record<string, keyof Nutrition> = {
   ENERC: 'kcal',
@@ -101,14 +113,22 @@ export class JowImporter implements RecipeImporter {
   readonly imageHosts = ['static.jow.fr'];
 
   canHandle(url: URL): boolean {
-    return (
-      ['http:', 'https:'].includes(url.protocol) &&
-      PAGE_HOSTS.includes(url.hostname) &&
-      RECIPE_PATH.test(url.pathname.toLowerCase())
-    );
+    if (!['http:', 'https:'].includes(url.protocol)) return false;
+    if (shareRecipeId(url)) return true;
+    return PAGE_HOSTS.includes(url.hostname) && RECIPE_PATH.test(url.pathname.toLowerCase());
   }
 
   identify(url: URL) {
+    const shareId = shareRecipeId(url);
+    if (shareId) {
+      // L'identifiant public (celui de la fiche) n'est connu qu'après la redirection :
+      // le doublon est alors vérifié sur le brouillon (services/imports.ts).
+      return {
+        fetchUrl: `https://jow.fr/fr/recipes/${shareId}`,
+        canonicalUrl: `https://jow.fr/recipes/${shareId}`,
+        externalId: null,
+      };
+    }
     const match = RECIPE_PATH.exec(url.pathname.toLowerCase());
     if (!match) throw new Error(`URL Jow non reconnue : ${url.pathname}`);
     const [, slug, id] = match;

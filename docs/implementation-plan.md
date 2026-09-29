@@ -106,7 +106,7 @@ Légende : 🧪 = étape qui ajoute des tests automatisés.
 | 4.5 | Share Target : `share_target` GET → route `/share` (URL depuis `url`, sinon `text`, sinon `title`) → `/import?url=…&auto=1` 🧪 (extraction) | Test d'extraction vert |
 | 4.6 | Production : servir `apps/web/dist` depuis Hono (statique + fallback SPA, `index.html` sans cache), bundle API esbuild (`better-sqlite3` externe) | `pnpm build && pnpm start` sert tout sur :3000 |
 | 4.7 | `Dockerfile` multi-étapes (node:22-slim, pnpm, volume `/data`, utilisateur non-root, `HEALTHCHECK` sur `/api/health`), `.dockerignore` | `docker run -v …:/data` fonctionne en local |
-| 4.8 | Déploiement VPS : image poussée sur ghcr.io, service ajouté à la pile existante derrière Caddy (`recettes.tojicode.fr`), sauvegarde quotidienne de `data/` (cron), procédure dans le README | App accessible en HTTPS |
+| 4.8 | Déploiement VPS : image transférée par SSH (`docker save`/`docker load`, sans registre — décision du 29/09/2026), service ajouté à la pile existante derrière Caddy (`recettes.tojicode.fr`), sauvegarde quotidienne de `data/` (cron), procédure dans le README | App accessible en HTTPS ✅ 29/09/2026 |
 | 4.9 | **Recette sur le S24 Ultra** : installer la PWA depuis Chrome ; partager depuis l'app Jow et depuis jow.fr ; relever le contenu exact partagé (lien direct / texte / lien court) et ajuster l'extraction ou la liste blanche ; tester le mode avion sur une fiche déjà ouverte | CA-F11 validé — **MVP livré** |
 
 ---

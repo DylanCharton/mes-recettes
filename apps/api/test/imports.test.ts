@@ -102,6 +102,54 @@ describe('POST /api/imports/preview', () => {
     expect(forced.body.status).toBe('ok');
   });
 
+  it('suit le lien de partage de l’app Jow jusqu’à la fiche jow.fr, sans appeler app.jow.com', async () => {
+    const shareId = '69f86dad46828277dd71568b';
+    const fetch = vi.fn<FetchFn>(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === `/fr/recipes/${shareId}`) {
+        return new Response(null, {
+          status: 308,
+          headers: { location: '/recipes/poulet-au-curry-89y06dxjhfua0twu16x5' },
+        });
+      }
+      return fakeJow()(input);
+    });
+    const { app } = createTestContext({ fetch });
+    const share = `Regarde cette recette ! https://app.jow.com/EC0U?action=recipe&recipeId=${shareId}&source=jow`;
+
+    const { body } = await preview(app, { text: share });
+    expect(body).toMatchObject({
+      status: 'ok',
+      draft: { title: 'Poulet au curry', externalId: '89y06dxjhfua0twu16x5' },
+    });
+    expect(fetch.mock.calls.map(([u]) => new URL(String(u)).hostname)).toEqual([
+      'jow.fr',
+      'jow.fr',
+    ]);
+
+    // Doublon : détecté une fois la fiche téléchargée (l'identifiant de partage diffère).
+    if (body.status !== 'ok') throw new Error('aperçu attendu');
+    await app.request('/api/recipes', jsonRequest('POST', body.draft));
+    const again = await preview(app, { text: share });
+    expect(again.body).toMatchObject({
+      status: 'duplicate',
+      existing: { title: 'Poulet au curry' },
+    });
+    expect((await preview(app, { text: share, force: true })).body.status).toBe('ok');
+  });
+
+  it.each([
+    ['https://jow.com/recipes/cobb-salad-8ohwfou4ilkid6l901ss', 'Jow US'],
+    ['https://app.jow.com/', 'ne mène pas à une recette'],
+  ])('explique pourquoi %s est refusé', async (url, message) => {
+    const fetch = fakeJow();
+    const { app } = createTestContext({ fetch });
+    const { status, body } = await preview(app, { url });
+    expect(status).toBe(422);
+    expect((body.error as { message: string } | undefined)?.message).toContain(message);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('limite le nombre d’imports par minute', async () => {
     const { app } = createTestContext({ fetch: fakeJow() });
     const statuses: number[] = [];

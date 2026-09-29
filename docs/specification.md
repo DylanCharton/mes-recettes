@@ -404,7 +404,7 @@ La migration doit rester « un après-midi de travail », pas une réécriture. 
 ### 11.2 Docker : utile ou pas ?
 
 - **Développement** : non. `pnpm install && pnpm dev` suffit. SQLite = un fichier.
-- **Production** : un `Dockerfile` (Node 22 slim, multi-étapes) produit une image autonome ; les données vivent dans un volume monté sur `/data`. C'est cohérent avec le VPS existant (pile Caddy « edge », images sur ghcr.io).
+- **Production** : un `Dockerfile` (Node 22 slim, multi-étapes) produit une image autonome ; les données vivent dans un volume monté sur `/data`. C'est cohérent avec le VPS existant (pile Caddy « edge »). L'image est transférée par SSH sans registre (décision du 29/09/2026) ; ghcr.io pourra être branché avec une CI.
 - **Docker Compose** : pas de fichier dans le dépôt en V1. Le service s'ajoute en quelques lignes à la pile existante du VPS (documenté dans le README au moment du déploiement).
 
 ## 12. Modèle de données

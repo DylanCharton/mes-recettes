@@ -8,12 +8,16 @@ import { findDuplicate } from './recipes';
 const MAX_HTML_BYTES = 3 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
-const unsupported = () =>
-  new AppError(
-    'UNSUPPORTED_URL',
-    422,
-    'Ce lien n’est pas pris en charge. Seules les recettes Jow sont importables pour l’instant.',
-  );
+function unsupported(url?: URL) {
+  const host = url?.hostname.replace(/^www\./, '') ?? '';
+  const message =
+    host === 'jow.com'
+      ? 'Les recettes Jow US (jow.com) ne sont pas prises en charge, seulement celles de jow.fr.'
+      : host === 'jow.fr' || host === 'app.jow.com'
+        ? 'Ce lien Jow ne mène pas à une recette. Ouvrez la recette dans Jow puis partagez-la à nouveau.'
+        : 'Ce lien n’est pas pris en charge. Seules les recettes Jow sont importables pour l’instant.';
+  return new AppError('UNSUPPORTED_URL', 422, message);
+}
 
 /**
  * Analyse une URL sans rien enregistrer (spec § 15.3) : importeur, doublon (avant tout appel
@@ -34,7 +38,7 @@ export async function previewImport(
   }
 
   const importer = findImporter(url);
-  if (!importer) throw unsupported();
+  if (!importer) throw unsupported(url);
 
   const { fetchUrl, canonicalUrl, externalId } = importer.identify(url);
   const log = logger.child({ provider: importer.source, externalId });
@@ -55,6 +59,16 @@ export async function previewImport(
       fetch,
     );
     const result = importer.parse(new TextDecoder().decode(page.body), new URL(page.url));
+
+    // Lien de partage : l'identifiant réel n'est connu qu'une fois la fiche téléchargée.
+    if (!request.force && !externalId) {
+      const { externalId: realId, sourceUrl } = result.draft;
+      const existing = findDuplicate(db, importer.source, realId, sourceUrl);
+      if (existing) {
+        log.info({ existingId: existing.id, externalId: realId }, 'import.duplicate');
+        return { status: 'duplicate', existing, canonicalUrl: sourceUrl ?? canonicalUrl };
+      }
+    }
     log.info(
       {
         strategies: result.strategies,
