@@ -189,6 +189,9 @@ export type RecipeDetail = {
   importedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Nombre de « Je l'ai faite ! » et date du dernier. */
+  cookCount: number;
+  lastCookedAt: string | null;
   ingredients: RecipeIngredient[];
   steps: RecipeStep[];
   tags: TagRef[];

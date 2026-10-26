@@ -5,11 +5,12 @@ import { currentSeason, SEASON_LABELS } from '@mes-recettes/shared';
 import { useRecipes } from '../api/recipes';
 import { useTags } from '../api/tags';
 import { Chip } from '../components/Chip';
+import { CookTimeline } from '../components/CookTimeline';
 import { FilterSheet } from '../components/FilterSheet';
+import { Onboarding } from '../components/Onboarding';
 import { LoadError, Loading } from '../components/QueryStatus';
 import { RecipeCard } from '../components/RecipeCard';
 import { SEASON_ICONS } from '../components/SeasonPicker';
-import { primaryButtonClass } from '../components/ui';
 import { useDebounce } from '../hooks/useDebounce';
 import { useScrollRestoration } from '../hooks/useScrollRestoration';
 import {
@@ -48,10 +49,15 @@ export function RecipesPage() {
   const inSeason = filters.seasons.length === 1 && filters.seasons[0] === season;
   const filterCount = activeFilterCount(filters);
   const isFiltered = filterCount > 0 || filters.q.trim() !== '';
+  // Bibliothèque vide : le tutoriel remplace la recherche, sans objet.
+  const isEmptyLibrary = recipes.isSuccess && recipes.data.total === 0 && !isFiltered;
 
   return (
     <section>
-      <div className="sticky top-0 z-10 -mx-4 bg-white/95 px-4 pt-1 pb-2 backdrop-blur dark:bg-zinc-900/95">
+      <div
+        hidden={isEmptyLibrary}
+        className="sticky top-0 z-10 -mx-4 bg-white/95 px-4 pt-1 pb-2 backdrop-blur dark:bg-zinc-900/95"
+      >
         <div className="flex gap-2">
           <label className="relative flex-1">
             <span className="sr-only">Rechercher une recette</span>
@@ -134,35 +140,27 @@ export function RecipesPage() {
       {recipes.isPending && <Loading />}
       {recipes.isError && <LoadError error={recipes.error} onRetry={() => recipes.refetch()} />}
 
-      {recipes.isSuccess && recipes.data.items.length === 0 && (
+      {isEmptyLibrary && <Onboarding />}
+
+      {recipes.isSuccess && recipes.data.items.length === 0 && isFiltered && (
         <div className="flex flex-col items-center gap-4 py-16 text-center">
-          {isFiltered ? (
-            <>
-              <p className="text-zinc-600 dark:text-zinc-300">Aucune recette ne correspond.</p>
-              <button
-                type="button"
-                className="text-accent underline"
-                onClick={() => {
-                  setSearch('');
-                  setFilters(EMPTY_FILTERS);
-                }}
-              >
-                Effacer les filtres
-              </button>
-            </>
-          ) : (
-            <>
-              <p className="text-zinc-600 dark:text-zinc-300">Aucune recette pour l’instant.</p>
-              <Link to="/import" className={primaryButtonClass}>
-                Importer une recette
-              </Link>
-            </>
-          )}
+          <p className="text-zinc-600 dark:text-zinc-300">Aucune recette ne correspond.</p>
+          <button
+            type="button"
+            className="text-accent underline"
+            onClick={() => {
+              setSearch('');
+              setFilters(EMPTY_FILTERS);
+            }}
+          >
+            Effacer les filtres
+          </button>
         </div>
       )}
 
       {recipes.isSuccess && recipes.data.items.length > 0 && (
         <>
+          {!isFiltered && <CookTimeline />}
           {isFiltered && (
             <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
               {recipes.data.total} recette{recipes.data.total > 1 ? 's' : ''}

@@ -1,10 +1,16 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { RecipeInputSchema, RecipeListQuerySchema, RecipePatchSchema } from '@mes-recettes/shared';
+import {
+  CookCreateSchema,
+  RecipeInputSchema,
+  RecipeListQuerySchema,
+  RecipePatchSchema,
+} from '@mes-recettes/shared';
 import type { AppDeps } from '../app';
 import { AppError, recipeNotFound } from '../lib/errors';
 import { importerForSource } from '../importers/registry';
 import { validate } from '../lib/validate';
+import { addCook } from '../services/cooks';
 import { downloadImage } from '../services/imports';
 import {
   createRecipe,
@@ -93,6 +99,22 @@ export function recipeRoutes(deps: AppDeps) {
       if (!recipe) throw recipeNotFound();
       return c.json(recipe);
     })
+    .post(
+      '/:id/cooks',
+      validate('param', IdParamSchema),
+      validate('json', CookCreateSchema),
+      (c) => {
+        const { cookedAt } = c.req.valid('json');
+        const date = cookedAt ? new Date(cookedAt) : new Date();
+        // Une minute de marge pour une horloge de téléphone un peu en avance.
+        if (date.getTime() > Date.now() + 60_000) {
+          throw new AppError('VALIDATION_ERROR', 400, 'La date ne peut pas être dans le futur');
+        }
+        const entry = addCook(db, c.get('user').id, c.req.valid('param').id, date);
+        if (!entry) throw recipeNotFound();
+        return c.json(entry, 201);
+      },
+    )
     .delete('/:id', validate('param', IdParamSchema), async (c) => {
       const deleted = deleteRecipe(db, c.get('user').id, c.req.valid('param').id);
       if (!deleted) throw recipeNotFound();

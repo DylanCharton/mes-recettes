@@ -6,6 +6,7 @@ export * from './ingredients/format';
 export * from './scaling';
 export * from './schemas/recipe';
 export * from './schemas/account';
+export * from './schemas/cook';
 export * from './schemas/errors';
 export * from './schemas/import';
 export * from './seasons';

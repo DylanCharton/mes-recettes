@@ -12,6 +12,7 @@ import { RecipesPage } from './pages/RecipesPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { SharePage } from './pages/SharePage';
 import { TagsPage } from './pages/TagsPage';
+import { TutorialPage } from './pages/TutorialPage';
 
 export function App() {
   return (
@@ -29,6 +30,7 @@ export function App() {
         <Route path="settings" element={<SettingsPage />} />
         <Route path="settings/invitations" element={<InvitationsPage />} />
         <Route path="settings/password" element={<PasswordPage />} />
+        <Route path="settings/tutorial" element={<TutorialPage />} />
         <Route path="tags" element={<TagsPage />} />
         <Route path="*" element={<Navigate to="/recipes" replace />} />
       </Route>

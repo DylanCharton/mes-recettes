@@ -298,7 +298,8 @@ Le MVP est ce qui me permet d'**arrêter d'utiliser Jow comme bibliothèque** d�
 - F10 Planning des repas (vue semaine) + « Ajouter la semaine aux courses ».
 - `GenericSchemaOrgImporter` : import de toute URL publique contenant un `Recipe` schema.org (couvre probablement Marmiton, 750g, Cuisine AZ sans code dédié), avec protection SSRF complète (§ 18.3).
 - Ré-import « Mettre à jour depuis la source ».
-- Bouton « Je l'ai cuisinée » → `last_cooked_at` + compteur ; tri « pas cuisinée depuis longtemps ».
+- ✅ Bouton « Je viens de la faire ! » (fiche, date passée possible, annulable) → table `cook_log` (une ligne par réalisation), compteur et dernière date sur la fiche, **frise** horizontale sur l'accueil (glisser pour remonter le temps). Reste : tri « pas cuisinée depuis longtemps ».
+- ✅ Tutoriel de prise en main (4 écrans) à la place de la bibliothèque tant qu'elle est vide ; à revoir depuis Réglages → « Revoir le tutoriel ».
 - Bouton « Au hasard » dans la bibliothèque (respecte les filtres actifs).
 - Import depuis le texte brut collé (sans URL) : un bloc texte → brouillon via le parseur de lignes.
 - Tentative automatique de re-téléchargement des images en échec.

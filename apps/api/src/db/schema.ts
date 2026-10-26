@@ -174,6 +174,31 @@ export const recipeTags = sqliteTable(
   ],
 );
 
+/**
+ * « Je l'ai faite ! » : une ligne par réalisation, source de la frise de l'accueil. Supprimer la
+ * recette efface ses réalisations (la frise ne montre que des recettes encore consultables).
+ */
+export const cookLogs = sqliteTable(
+  'cook_log',
+  {
+    id: integer().primaryKey({ autoIncrement: true }),
+    userId: integer()
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    recipeId: integer()
+      .notNull()
+      .references(() => recipes.id, { onDelete: 'cascade' }),
+    cookedAt: text().notNull(),
+    createdAt: text()
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`),
+  },
+  (t) => [
+    index('cook_log_user_cooked_at_idx').on(t.userId, t.cookedAt),
+    index('cook_log_recipe_id_idx').on(t.recipeId),
+  ],
+);
+
 /** Liste fermée de saisons : enum dans le code, pas de table de référence (spec § 12.3). */
 export const recipeSeasons = sqliteTable(
   'recipe_season',

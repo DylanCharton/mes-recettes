@@ -143,4 +143,10 @@ describe('GET /api/ingredients', () => {
     const po = (await (await app.request('/api/ingredients?q=po')).json()) as { name: string }[];
     expect(po[0]?.name).toMatch(/^Po/);
   });
+
+  it('liste les plus fréquents sans recherche', async () => {
+    const res = await app.request('/api/ingredients');
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as unknown[]).length).toBeGreaterThan(0);
+  });
 });

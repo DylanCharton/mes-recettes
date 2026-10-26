@@ -1,5 +1,12 @@
 import { eq } from 'drizzle-orm';
-import type { CreatedInvitation, RecipeDetail, RecipeList, Tag } from '@mes-recettes/shared';
+import type {
+  CookEntry,
+  CookList,
+  CreatedInvitation,
+  RecipeDetail,
+  RecipeList,
+  Tag,
+} from '@mes-recettes/shared';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { invitations, users } from '../src/db/schema';
 import type { AuthConfig } from '../src/env';
@@ -192,6 +199,35 @@ describe('isolation des bibliothèques', () => {
     expect(tags).toEqual([{ id: theirs.tags[0]!.id, name: 'Rapide', recipeCount: 1 }]);
     const mine = (await (await app.request('/api/tags', admin)).json()) as Tag[];
     expect(mine[0]!.id).not.toBe(tags[0]!.id);
+  }, 30_000);
+
+  it('garde la frise « Je l’ai faite ! » propre à chaque compte', async () => {
+    const { app, admin } = await setup();
+    const mine = (await (
+      await createRecipe(app, admin, { title: 'Risotto' })
+    ).json()) as RecipeDetail;
+    const cooked = await app.request(
+      `/api/recipes/${mine.id}/cooks`,
+      withSession(jsonRequest('POST', {}), admin),
+    );
+    const { id: cookId } = (await cooked.json()) as CookEntry;
+    const friend = await createFriend(app, admin);
+
+    expect(
+      (
+        await app.request(
+          `/api/recipes/${mine.id}/cooks`,
+          withSession(jsonRequest('POST', {}), friend),
+        )
+      ).status,
+    ).toBe(404);
+    expect(await (await app.request('/api/cooks', friend)).json()).toEqual({ items: [] });
+    expect(
+      (await app.request(`/api/cooks/${cookId}`, { ...friend, method: 'DELETE' })).status,
+    ).toBe(404);
+    expect(
+      ((await (await app.request('/api/cooks', admin)).json()) as CookList).items,
+    ).toHaveLength(1);
   }, 30_000);
 
   it('refuse de reprendre l’image d’une recette d’un autre compte', async () => {

@@ -25,6 +25,7 @@ import { errorMessage } from '../api/client';
 import { useDeleteRecipe, usePatchRecipe, useRecipe } from '../api/recipes';
 import { BackLink } from '../components/BackLink';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { CookedPanel } from '../components/CookedPanel';
 import { LoadError, Loading } from '../components/QueryStatus';
 import { SEASON_ICONS, SeasonPicker } from '../components/SeasonPicker';
 import { ServingsStepper } from '../components/ServingsStepper';
@@ -194,6 +195,8 @@ function RecipeView({ recipe }: { recipe: RecipeDetail }) {
           Tout décocher
         </button>
       )}
+
+      <CookedPanel recipe={recipe} />
 
       <NotesEditor recipe={recipe} />
 

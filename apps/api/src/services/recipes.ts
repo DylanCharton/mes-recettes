@@ -30,6 +30,7 @@ import {
 } from '@mes-recettes/shared';
 import type { Db, Tx } from '../db/client';
 import {
+  cookLogs,
   ingredients,
   recipeIngredients,
   recipes,
@@ -152,7 +153,7 @@ function insertChildren(tx: Tx, recipeId: number, lines: LineData[], steps: stri
 }
 
 /** Image locale, sinon image distante en repli (téléchargement échoué, spec § 19). */
-const imageUrl = (row: { imagePath: string | null; imageSourceUrl: string | null }) =>
+export const imageUrl = (row: { imagePath: string | null; imageSourceUrl: string | null }) =>
   localImageUrl(row.imagePath) ?? row.imageSourceUrl;
 
 /** Remplace tags et saisons quand la requête les fournit (absents = inchangés). */
@@ -180,7 +181,7 @@ function toDetail(
   recipe: RecipeRow,
   lines: IngredientRow[],
   steps: StepRow[],
-  extra: Pick<RecipeDetail, 'tags' | 'seasons'>,
+  extra: Pick<RecipeDetail, 'tags' | 'seasons' | 'cookCount' | 'lastCookedAt'>,
 ): RecipeDetail {
   return {
     ...extra,
@@ -250,7 +251,15 @@ export function getRecipe(db: Db | Tx, userId: number, id: number): RecipeDetail
     .all()
     .map((row) => row.season);
 
+  const cooks = db
+    .select({ count: count(), last: sql<string | null>`max(${cookLogs.cookedAt})` })
+    .from(cookLogs)
+    .where(eq(cookLogs.recipeId, id))
+    .get();
+
   return toDetail(recipe, lines, steps, {
+    cookCount: cooks?.count ?? 0,
+    lastCookedAt: cooks?.last ?? null,
     tags: tagsByRecipe(db, [id]).get(id) ?? [],
     seasons: SEASON_ORDER.filter((season) => seasons.includes(season)),
   });
@@ -536,9 +545,10 @@ export function searchIngredients(db: Db, userId: number, query: string) {
       .groupBy(ingredients.id)
       // Début du nom, puis début de mot, puis ailleurs (« po » : Poulet… avant Curry en poudre).
       .orderBy(
+        // Sans recherche, rang constant : une expression, pas un entier (lu comme n° de colonne).
         key
           ? sql`case when ${ingredients.normalizedName} like ${`${key}%`} then 0 when ${ingredients.normalizedName} like ${`% ${key}%`} then 1 else 2 end`
-          : sql`0`,
+          : sql`null`,
         desc(count(recipeIngredients.id)),
         asc(ingredients.name),
       )

@@ -155,7 +155,7 @@ Légende : 🧪 = étape qui ajoute des tests automatisés.
 | 7.1 | `safeFetch` mode « public » : résolution DNS + blocage des plages privées dans le `lookup` de l'agent HTTP (anti DNS-rebinding) 🧪 | Tests SSRF IP privées/IPv6/mappées verts |
 | 7.2 | `GenericSchemaOrgImporter` (réutilise le mappeur) ; fixtures Marmiton, 750g, Cuisine AZ 🧪 | 3 sites importés sans code dédié (ou écarts documentés) |
 | 7.3 | « Mettre à jour depuis la source » (ré-import conservant notes, tags, statut, favori) 🧪 | Recette rafraîchie sans perte des données personnelles |
-| 7.4 | « Je l'ai cuisinée » (`last_cooked_at`, compteur, tri associé) ; bouton « Au hasard » | Disponibles dans la fiche / bibliothèque |
+| 7.4 | ✅ « Je viens de la faire ! » (`cook_log`, compteur, frise de l'accueil) ; reste : tri associé, bouton « Au hasard » | Disponibles dans la fiche / bibliothèque |
 | 7.5 | Import depuis texte brut collé ; retéléchargement automatique des images en échec | — |
 
 ---

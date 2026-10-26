@@ -1,4 +1,12 @@
-import { ChevronRight, Download, KeyRound, LogOut, Tags, UserPlus } from 'lucide-react';
+import {
+  ChevronRight,
+  Download,
+  GraduationCap,
+  KeyRound,
+  LogOut,
+  Tags,
+  UserPlus,
+} from 'lucide-react';
 import { Link } from 'react-router';
 import { useLogout, useSession } from '../api/auth';
 import { useInstallPrompt } from '../lib/installPrompt';
@@ -28,6 +36,13 @@ export function SettingsPage() {
           <Link to="/tags" className={row}>
             <Tags size={20} aria-hidden />
             <span className="flex-1">Gérer les tags</span>
+            <ChevronRight size={18} className="text-zinc-400" aria-hidden />
+          </Link>
+        </li>
+        <li>
+          <Link to="/settings/tutorial" className={row}>
+            <GraduationCap size={20} aria-hidden />
+            <span className="flex-1">Revoir le tutoriel</span>
             <ChevronRight size={18} className="text-zinc-400" aria-hidden />
           </Link>
         </li>

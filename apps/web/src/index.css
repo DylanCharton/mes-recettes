@@ -2,6 +2,44 @@
 
 @theme {
   --color-accent: #c2410c;
+  --animate-cook-pop: cook-pop 450ms ease-out both;
+
+  @keyframes cook-pop {
+    0% {
+      transform: scale(0.4);
+      opacity: 0;
+    }
+    60% {
+      transform: scale(1.15);
+      opacity: 1;
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+}
+
+/* Éclats autour de l'icône « Je viens de la faire ! » (--angle posé par élément). */
+.cook-burst {
+  opacity: 0;
+  transform: rotate(var(--angle)) translateY(-36px);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .cook-burst {
+    animation: cook-burst 700ms 150ms ease-out both;
+  }
+
+  @keyframes cook-burst {
+    from {
+      opacity: 1;
+      transform: rotate(var(--angle)) translateY(-20px) scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: rotate(var(--angle)) translateY(-44px) scale(0.3);
+    }
+  }
 }
 
 :root {

@@ -13,6 +13,7 @@ import type { FetchFn } from './lib/safeFetch';
 import { requireSession } from './lib/session';
 import { createStaticHandler } from './lib/staticFiles';
 import { authRoutes } from './routes/auth';
+import { cookRoutes } from './routes/cooks';
 import { imageRoutes } from './routes/images';
 import { invitationRoutes } from './routes/invitations';
 import { importRoutes } from './routes/imports';
@@ -129,6 +130,7 @@ export function createApp(deps: AppDeps) {
     .route('/api/auth', authRoutes(deps))
     .route('/api/invitations', invitationRoutes(deps))
     .route('/api/recipes', recipeRoutes(deps))
+    .route('/api/cooks', cookRoutes(deps))
     .route('/api/images', imageRoutes(deps))
     .route('/api/imports', importRoutes(deps))
     .route('/api/tags', tagRoutes(deps))
