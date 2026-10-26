@@ -55,24 +55,28 @@ docker exec edge-caddy caddy reload --config /etc/caddy/Caddyfile
 
 Pas de registre : l'image est construite sur ton poste et transférée par SSH
 (le VPS est en amd64, comme Docker Desktop : pas de build multi-plateforme).
+Depuis la racine du dépôt, dans Git Bash :
 
 ```sh
-TAG=$(git rev-parse --short HEAD)
-docker build -t mes-recettes:$TAG .
-docker save mes-recettes:$TAG | gzip | ssh dylan@164.132.43.97 'gunzip | docker load'
+bash deploy/deploy.sh            # ou : bash deploy/deploy.sh utilisateur@hôte
 ```
 
-Sur le VPS :
+Le script construit `mes-recettes:<commit>`, la charge sur le VPS, puis y lance
+`remote-deploy.sh` en `sudo` (mot de passe demandé une fois) :
 
-```sh
-cd /srv/mes-recettes
-sudo sed -i "s|^IMAGE=.*|IMAGE=mes-recettes:<tag>|" .env
-sudo docker compose up -d --wait        # « healthy » attendu sous 30 s
-curl -fsS https://recettes.tojicode.fr/api/health
-```
+- réinstalle `/srv/mes-recettes/compose.yml` depuis `compose.prod.yml` ;
+- **complète** `/srv/mes-recettes/.env` d'après `env.prod.example`, sans jamais écraser une
+  valeur : il demande les clés absentes (ex. `ADMIN_EMAIL`) et génère `SESSION_SECRET` s'il
+  manque. L'ancien fichier est gardé dans `.env.bak` ;
+- pointe `IMAGE` sur la nouvelle image, `docker compose up -d --wait`, vérifie `/api/health`.
 
-Retour arrière : remettre l'ancien tag dans `.env` (image encore présente sur le VPS),
-puis `sudo docker compose up -d`. Les
+Le `.env` de production n'est jamais recopié depuis un modèle : il contient les secrets
+(`SESSION_SECRET`, empreinte du mot de passe), et les remplacer déconnecterait tout le monde.
+Une nouvelle variable obligatoire s'ajoute dans `env.prod.example` (et `compose.prod.yml`) ;
+le déploiement suivant la demandera.
+
+Retour arrière : le script affiche l'image précédente ; la remettre dans `.env` (elle est
+encore présente sur le VPS), puis `sudo docker compose up -d`. Les
 migrations de base sont appliquées au démarrage et ne suppriment jamais de données.
 
 ## 3. Sauvegarde quotidienne
@@ -103,8 +107,8 @@ Changer `SESSION_SECRET` puis `sudo docker compose up -d` déconnecte tous les a
 - Le compte n° 1 (administrateur) détient la bibliothèque d'avant le multi-comptes. Au premier
   démarrage, il reçoit `ADMIN_EMAIL` et `AUTH_PASSWORD_HASH` ; ces variables sont ensuite ignorées
   (changer de mot de passe se fait dans Réglages, ou avec `users.js reset-password`).
-- **Mise à jour d'une installation existante** : ajouter `ADMIN_EMAIL=<ton e-mail>` dans
-  `/srv/mes-recettes/.env` _avant_ de démarrer la nouvelle image. Toutes les sessions existantes
+- **Mise à jour d'une installation existante** : `deploy.sh` demande `ADMIN_EMAIL` (absent du
+  `.env`) avant de démarrer la nouvelle image. Toutes les sessions existantes
   sont invalidées (nouveau format de cookie) : se reconnecter avec l'e-mail et le mot de passe
   habituel.
 - Inviter : Réglages → Inviter quelqu'un → lien à usage unique, valable 7 jours.
