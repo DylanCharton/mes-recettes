@@ -14,6 +14,7 @@ import { requireSession } from './lib/session';
 import { createStaticHandler } from './lib/staticFiles';
 import { authRoutes } from './routes/auth';
 import { imageRoutes } from './routes/images';
+import { invitationRoutes } from './routes/invitations';
 import { importRoutes } from './routes/imports';
 import { ingredientRoutes } from './routes/ingredients';
 import { recipeRoutes } from './routes/recipes';
@@ -34,10 +35,13 @@ export type AppDeps = {
 };
 
 const PUBLIC_API_PATHS = ['/api/health', '/api/auth/me', '/api/auth/login', '/api/auth/logout'];
+/** Santé, connexion et invitations reçues ; tout le reste exige une session. */
+const isPublicApiPath = (path: string) =>
+  PUBLIC_API_PATHS.includes(path) || path.startsWith('/api/auth/invitations/');
 const JSON_BODY_LIMIT = 1024 * 1024;
 
 export function createApp(deps: AppDeps) {
-  const { logger, images, auth } = deps;
+  const { db, logger, images, auth } = deps;
   const app = new Hono();
 
   app.use(requestId());
@@ -91,8 +95,11 @@ export function createApp(deps: AppDeps) {
     })(c, next);
   });
 
-  app.use('/api/*', requireSession(auth, PUBLIC_API_PATHS));
-  app.use('/images/*', requireSession(auth, []));
+  app.use('/api/*', requireSession(auth, db, isPublicApiPath));
+  app.use(
+    '/images/*',
+    requireSession(auth, db, () => false),
+  );
 
   app.onError((err, c) => {
     if (err instanceof AppError) {
@@ -120,6 +127,7 @@ export function createApp(deps: AppDeps) {
   const routes = app
     .route('/api', systemRoutes(deps))
     .route('/api/auth', authRoutes(deps))
+    .route('/api/invitations', invitationRoutes(deps))
     .route('/api/recipes', recipeRoutes(deps))
     .route('/api/images', imageRoutes(deps))
     .route('/api/imports', importRoutes(deps))

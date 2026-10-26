@@ -16,7 +16,8 @@
     "build": "node build.mjs",
     "start": "node dist/server.js",
     "hash-password": "tsx src/scripts/hash-password.ts",
-    "backup": "tsx src/scripts/backup.ts"
+    "backup": "tsx src/scripts/backup.ts",
+    "users": "tsx src/scripts/users.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.1",

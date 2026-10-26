@@ -11,6 +11,7 @@ import {
   deleteRecipe,
   findDuplicate,
   getRecipe,
+  isImageOwnedByOther,
   listRecipes,
   patchRecipe,
   updateRecipe,
@@ -20,28 +21,35 @@ const IdParamSchema = z.object({ id: z.coerce.number().int().positive() });
 
 export function recipeRoutes(deps: AppDeps) {
   const { db, images } = deps;
-  const assertImageExists = (imagePath: string | null | undefined) => {
-    if (imagePath && !images.exists(imagePath)) {
+  const assertImageUsable = (userId: number, imagePath: string | null | undefined) => {
+    if (imagePath && (!images.exists(imagePath) || isImageOwnedByOther(db, userId, imagePath))) {
       throw new AppError('VALIDATION_ERROR', 400, 'Image introuvable, renvoyez-la');
     }
   };
 
   return new Hono()
     .get('/', validate('query', RecipeListQuerySchema), (c) => {
-      return c.json(listRecipes(db, c.req.valid('query')));
+      return c.json(listRecipes(db, c.get('user').id, c.req.valid('query')));
     })
     .get('/:id', validate('param', IdParamSchema), (c) => {
-      const recipe = getRecipe(db, c.req.valid('param').id);
+      const recipe = getRecipe(db, c.get('user').id, c.req.valid('param').id);
       if (!recipe) throw recipeNotFound();
       return c.json(recipe);
     })
     .post('/', validate('json', RecipeInputSchema), async (c) => {
       const input = c.req.valid('json');
-      assertImageExists(input.imagePath);
+      const userId = c.get('user').id;
+      assertImageUsable(userId, input.imagePath);
 
       const importer = input.source ? importerForSource(input.source) : undefined;
       if (importer && !input.force) {
-        const existing = findDuplicate(db, importer.source, input.externalId, input.sourceUrl);
+        const existing = findDuplicate(
+          db,
+          userId,
+          importer.source,
+          input.externalId,
+          input.sourceUrl,
+        );
         if (existing) {
           throw new AppError('DUPLICATE_RECIPE', 409, 'Cette recette existe déjà', { existing });
         }
@@ -53,8 +61,8 @@ export function recipeRoutes(deps: AppDeps) {
         imagePath = await downloadImage(deps, input.imageSourceUrl, importer.imageHosts);
       }
 
-      const recipe = createRecipe(db, { ...input, imagePath });
-      deps.logger.info({ recipeId: recipe.id, source: recipe.source }, 'recipe.created');
+      const recipe = createRecipe(db, userId, { ...input, imagePath });
+      deps.logger.info({ userId, recipeId: recipe.id, source: recipe.source }, 'recipe.created');
       return c.json(recipe, 201);
     })
     .put(
@@ -63,8 +71,9 @@ export function recipeRoutes(deps: AppDeps) {
       validate('json', RecipeInputSchema),
       async (c) => {
         const input = c.req.valid('json');
-        assertImageExists(input.imagePath);
-        const result = updateRecipe(db, c.req.valid('param').id, input);
+        const userId = c.get('user').id;
+        assertImageUsable(userId, input.imagePath);
+        const result = updateRecipe(db, userId, c.req.valid('param').id, input);
         if (!result) throw recipeNotFound();
 
         const { recipe, previousImagePath } = result;
@@ -75,12 +84,17 @@ export function recipeRoutes(deps: AppDeps) {
       },
     )
     .patch('/:id', validate('param', IdParamSchema), validate('json', RecipePatchSchema), (c) => {
-      const recipe = patchRecipe(db, c.req.valid('param').id, c.req.valid('json'));
+      const recipe = patchRecipe(
+        db,
+        c.get('user').id,
+        c.req.valid('param').id,
+        c.req.valid('json'),
+      );
       if (!recipe) throw recipeNotFound();
       return c.json(recipe);
     })
     .delete('/:id', validate('param', IdParamSchema), async (c) => {
-      const deleted = deleteRecipe(db, c.req.valid('param').id);
+      const deleted = deleteRecipe(db, c.get('user').id, c.req.valid('param').id);
       if (!deleted) throw recipeNotFound();
       if (deleted.imagePath) await images.remove(deleted.imagePath);
       return c.body(null, 204);

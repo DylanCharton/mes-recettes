@@ -7,17 +7,21 @@ import { inputClass, primaryButtonClass } from '../components/ui';
 
 export function LoginPage() {
   const [params] = useSearchParams();
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const login = useLogin();
   const navigate = useNavigate();
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    login.mutate(password, {
-      // Reprend là où on en était (ex. un import lancé depuis le partage Android).
-      onSuccess: () => navigate(safeNextPath(params.get('next')), { replace: true }),
-      onError: () => setPassword(''),
-    });
+    login.mutate(
+      { email, password },
+      {
+        // Reprend là où on en était (ex. un import lancé depuis le partage Android).
+        onSuccess: () => navigate(safeNextPath(params.get('next')), { replace: true }),
+        onError: () => setPassword(''),
+      },
+    );
   }
 
   return (
@@ -27,6 +31,19 @@ export function LoginPage() {
         <h1 className="text-2xl font-semibold">Mes recettes</h1>
       </div>
       <form onSubmit={submit} className="flex flex-col gap-3">
+        <label htmlFor="email" className="text-sm font-medium">
+          E-mail
+        </label>
+        <input
+          id="email"
+          type="email"
+          autoComplete="username"
+          autoFocus
+          required
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className={inputClass}
+        />
         <label htmlFor="password" className="text-sm font-medium">
           Mot de passe
         </label>
@@ -34,7 +51,6 @@ export function LoginPage() {
           id="password"
           type="password"
           autoComplete="current-password"
-          autoFocus
           required
           value={password}
           onChange={(e) => setPassword(e.target.value)}
@@ -48,7 +64,7 @@ export function LoginPage() {
         <button
           type="submit"
           className={primaryButtonClass}
-          disabled={login.isPending || !password}
+          disabled={login.isPending || !email || !password}
         >
           {login.isPending && <Loader2 size={18} className="animate-spin" aria-hidden />}
           Se connecter

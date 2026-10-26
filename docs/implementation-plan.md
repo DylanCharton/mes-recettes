@@ -111,6 +111,21 @@ Légende : 🧪 = étape qui ajoute des tests automatisés.
 
 ---
 
+## Phase 4b — Comptes multiples (12/10/2026)
+
+**Livrable** : j'invite une personne par un lien ; elle crée son compte et importe ses propres recettes sans voir les miennes (spec § 18.4, décisions A9–A11).
+
+| # | Étape | Fait quand |
+|---|-------|------------|
+| 4b.1 | Schéma `user`, `invitation`, `recipe.user_id`, `tag.user_id` ; migration `0002_accounts` écrite à la main (compte n° 1 + reconstruction de `recipe`/`tag`), migrations exécutées clés étrangères désactivées 🧪 | Migration vérifiée sur une copie de la base de production : aucun enfant perdu ✅ |
+| 4b.2 | Sessions `v2.<compte>.<version>`, `ADMIN_EMAIL` + `AUTH_PASSWORD_HASH` pour le premier compte, connexion par e-mail, changement de mot de passe, script `users` (`list`, `reset-password`) 🧪 | ✅ |
+| 4b.3 | Services et routes filtrés par compte (recettes, tags, ingrédients, doublons, images) 🧪 | Tests d'isolation verts ✅ |
+| 4b.4 | Invitations : création / liste / révocation (admin), vérification et acceptation publiques 🧪 | ✅ |
+| 4b.5 | Front : connexion par e-mail, `/invite/:token`, Réglages → Inviter quelqu'un / Changer le mot de passe, caches SW vidés à la déconnexion | Parcours complet vérifié sur le serveur buildé ✅ |
+| 4b.6 | Déploiement : `ADMIN_EMAIL` dans `/srv/mes-recettes/.env`, nouvelle image, reconnexion par e-mail ; invitation envoyée depuis le S24 | En production |
+
+---
+
 ## Phase 5 — Liste de courses et sauvegarde → **V1**
 
 **Livrable** : j'ajoute des recettes à ma liste, je fais mes courses en cochant ; je peux exporter toute ma bibliothèque.

@@ -56,3 +56,14 @@ export function jsonRequest(method: string, body: unknown): RequestInit {
 
 /** Plus petit JPEG reconnaissable par ses octets magiques (le contenu n'est pas décodé). */
 export const FAKE_JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46]);
+
+/** En-têtes portant le cookie de session posé par une réponse (connexion, invitation). */
+export function sessionHeaders(res: Response): RequestInit {
+  const cookie = res.headers.get('set-cookie') ?? '';
+  return { headers: { cookie: cookie.split(';')[0]! } };
+}
+
+/** Fusionne deux `RequestInit` (ex. `jsonRequest` + `sessionHeaders`). */
+export function withSession(init: RequestInit, session: RequestInit): RequestInit {
+  return { ...init, headers: { ...(init.headers as object), ...(session.headers as object) } };
+}

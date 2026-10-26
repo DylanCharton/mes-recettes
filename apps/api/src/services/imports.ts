@@ -25,6 +25,7 @@ function unsupported(url?: URL) {
  */
 export async function previewImport(
   { db, logger, fetch }: AppDeps,
+  userId: number,
   request: { url?: string; text?: string; force?: boolean },
 ): Promise<ImportPreviewResponse> {
   const raw = extractUrl(request.url ?? '') ?? extractUrl(request.text ?? '');
@@ -41,10 +42,10 @@ export async function previewImport(
   if (!importer) throw unsupported(url);
 
   const { fetchUrl, canonicalUrl, externalId } = importer.identify(url);
-  const log = logger.child({ provider: importer.source, externalId });
+  const log = logger.child({ userId, provider: importer.source, externalId });
 
   if (!request.force) {
-    const existing = findDuplicate(db, importer.source, externalId, canonicalUrl);
+    const existing = findDuplicate(db, userId, importer.source, externalId, canonicalUrl);
     if (existing) {
       log.info({ existingId: existing.id }, 'import.duplicate');
       return { status: 'duplicate', existing, canonicalUrl };
@@ -63,7 +64,7 @@ export async function previewImport(
     // Lien de partage : l'identifiant réel n'est connu qu'une fois la fiche téléchargée.
     if (!request.force && !externalId) {
       const { externalId: realId, sourceUrl } = result.draft;
-      const existing = findDuplicate(db, importer.source, realId, sourceUrl);
+      const existing = findDuplicate(db, userId, importer.source, realId, sourceUrl);
       if (existing) {
         log.info({ existingId: existing.id, externalId: realId }, 'import.duplicate');
         return { status: 'duplicate', existing, canonicalUrl: sourceUrl ?? canonicalUrl };

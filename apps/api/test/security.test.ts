@@ -4,24 +4,29 @@ import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { AuthConfig } from '../src/env';
 import { hashPassword, verifyPassword } from '../src/lib/password';
+import { bootstrapAdmin } from '../src/services/users';
 import { createTestContext, jsonRequest } from './helpers';
 
-let auth: AuthConfig;
+const auth: AuthConfig = { enabled: true, sessionSecret: 'x'.repeat(32), secureCookie: false };
+let passwordHash: string;
 
 beforeAll(async () => {
-  auth = {
-    enabled: true,
-    passwordHash: await hashPassword('bon-mot-de-passe'),
-    sessionSecret: 'x'.repeat(32),
-    secureCookie: false,
-  };
+  passwordHash = await hashPassword('bon-mot-de-passe');
 });
+
+/** Contexte avec le compte n° 1 initialisé (moi@example.fr / bon-mot-de-passe). */
+function createAuthContext() {
+  const context = createTestContext({ auth });
+  bootstrapAdmin(context.db, { email: 'Moi@Example.fr', passwordHash });
+  return context;
+}
 
 async function login(
   app: ReturnType<typeof createTestContext>['app'],
   password = 'bon-mot-de-passe',
+  email = 'moi@example.fr',
 ) {
-  return app.request('/api/auth/login', jsonRequest('POST', { password }));
+  return app.request('/api/auth/login', jsonRequest('POST', { email, password }));
 }
 
 describe('mot de passe', () => {
@@ -36,24 +41,28 @@ describe('mot de passe', () => {
 
 describe('authentification (CA-F15)', () => {
   it('protège l’API et les images, mais pas la santé ni la connexion', async () => {
-    const { app } = createTestContext({ auth });
+    const { app } = createAuthContext();
     expect((await app.request('/api/recipes')).status).toBe(401);
     expect((await app.request('/api/tags')).status).toBe(401);
     expect((await app.request('/images/00000000-0000-0000-0000-000000000000.jpg')).status).toBe(
       401,
     );
     expect((await app.request('/api/health')).status).toBe(200);
+    expect((await app.request('/api/invitations')).status).toBe(401);
     expect(await (await app.request('/api/auth/me')).json()).toEqual({
       authEnabled: true,
       authenticated: false,
+      user: null,
     });
   });
 
-  it('ouvre une session avec le bon mot de passe (cookie HttpOnly, SameSite=Lax)', async () => {
-    const { app } = createTestContext({ auth });
+  it('ouvre une session avec le bon e-mail et mot de passe (cookie HttpOnly, SameSite=Lax)', async () => {
+    const { app } = createAuthContext();
     expect((await login(app, 'mauvais')).status).toBe(401);
+    expect((await login(app, 'bon-mot-de-passe', 'inconnu@example.fr')).status).toBe(401);
 
-    const res = await login(app);
+    // E-mail insensible à la casse et aux espaces.
+    const res = await login(app, 'bon-mot-de-passe', '  MOI@example.fr ');
     expect(res.status).toBe(204);
     const cookie = res.headers.get('set-cookie') ?? '';
     expect(cookie).toMatch(/mr_session=/);
@@ -62,21 +71,23 @@ describe('authentification (CA-F15)', () => {
 
     const session = { headers: { cookie: cookie.split(';')[0]! } };
     expect((await app.request('/api/recipes', session)).status).toBe(200);
-    expect(await (await app.request('/api/auth/me', session)).json()).toMatchObject({
+    expect(await (await app.request('/api/auth/me', session)).json()).toEqual({
+      authEnabled: true,
       authenticated: true,
+      user: { id: 1, name: 'dylan', email: 'moi@example.fr', isAdmin: true },
     });
   });
 
   it('refuse un cookie falsifié', async () => {
-    const { app } = createTestContext({ auth });
+    const { app } = createAuthContext();
     const res = await app.request('/api/recipes', {
-      headers: { cookie: 'mr_session=v1.123.fausse-signature' },
+      headers: { cookie: 'mr_session=v2.1.1.fausse-signature' },
     });
     expect(res.status).toBe(401);
   });
 
   it('limite les tentatives de connexion à 5 par minute', async () => {
-    const { app } = createTestContext({ auth });
+    const { app } = createAuthContext();
     const statuses: number[] = [];
     for (let i = 0; i < 6; i++) statuses.push((await login(app, 'mauvais')).status);
     expect(statuses).toEqual([401, 401, 401, 401, 401, 429]);
@@ -85,9 +96,10 @@ describe('authentification (CA-F15)', () => {
   it('ne demande rien quand l’authentification est désactivée', async () => {
     const { app } = createTestContext({ auth: { enabled: false } });
     expect((await app.request('/api/recipes')).status).toBe(200);
-    expect(await (await app.request('/api/auth/me')).json()).toEqual({
+    expect(await (await app.request('/api/auth/me')).json()).toMatchObject({
       authEnabled: false,
       authenticated: true,
+      user: { id: 1, isAdmin: true },
     });
   });
 });

@@ -1,4 +1,4 @@
-import { asc, count, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, sql } from 'drizzle-orm';
 import { normalizeText, type Tag, type TagRef } from '@mes-recettes/shared';
 import type { Db, Tx } from '../db/client';
 import { recipeTags, tags } from '../db/schema';
@@ -9,30 +9,35 @@ const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompar
 const tagExists = (existing: TagRef) =>
   new AppError('TAG_EXISTS', 409, `Le tag « ${existing.name} » existe déjà`, { existing });
 
-function findByName(db: Db | Tx, name: string): TagRef | undefined {
+// Tags propres à chaque compte : toutes les fonctions prennent le compte en paramètre.
+
+function findByName(db: Db | Tx, userId: number, name: string): TagRef | undefined {
   return db
     .select({ id: tags.id, name: tags.name })
     .from(tags)
-    .where(eq(tags.normalizedName, normalizeText(name)))
+    .where(and(eq(tags.userId, userId), eq(tags.normalizedName, normalizeText(name))))
     .get();
 }
 
-export function listTags(db: Db): Tag[] {
+const ownedTag = (userId: number, id: number) => and(eq(tags.id, id), eq(tags.userId, userId));
+
+export function listTags(db: Db, userId: number): Tag[] {
   return db
     .select({ id: tags.id, name: tags.name, recipeCount: count(recipeTags.recipeId) })
     .from(tags)
     .leftJoin(recipeTags, eq(recipeTags.tagId, tags.id))
+    .where(eq(tags.userId, userId))
     .groupBy(tags.id)
     .all()
     .sort(byName);
 }
 
-export function createTag(db: Db, name: string): Tag {
-  const existing = findByName(db, name);
+export function createTag(db: Db, userId: number, name: string): Tag {
+  const existing = findByName(db, userId, name);
   if (existing) throw tagExists(existing);
   const tag = db
     .insert(tags)
-    .values({ name, normalizedName: normalizeText(name) })
+    .values({ userId, name, normalizedName: normalizeText(name) })
     .returning({ id: tags.id, name: tags.name })
     .get();
   return { ...tag, recipeCount: 0 };
@@ -42,12 +47,18 @@ export function createTag(db: Db, name: string): Tag {
  * Renomme un tag. Si le nouveau nom est déjà pris par un autre tag, refuse sauf `merge` :
  * les recettes sont alors rattachées au tag existant et l'ancien est supprimé (spec F8).
  */
-export function renameTag(db: Db, id: number, name: string, merge = false): TagRef | null {
+export function renameTag(
+  db: Db,
+  userId: number,
+  id: number,
+  name: string,
+  merge = false,
+): TagRef | null {
   return db.transaction((tx) => {
-    const tag = tx.select({ id: tags.id }).from(tags).where(eq(tags.id, id)).get();
+    const tag = tx.select({ id: tags.id }).from(tags).where(ownedTag(userId, id)).get();
     if (!tag) return null;
 
-    const target = findByName(tx, name);
+    const target = findByName(tx, userId, name);
     if (target && target.id !== id) {
       if (!merge) throw tagExists(target);
       tx.run(sql`
@@ -67,20 +78,20 @@ export function renameTag(db: Db, id: number, name: string, merge = false): TagR
   });
 }
 
-export function deleteTag(db: Db, id: number): boolean {
-  return db.delete(tags).where(eq(tags.id, id)).returning({ id: tags.id }).get() !== undefined;
+export function deleteTag(db: Db, userId: number, id: number): boolean {
+  return db.delete(tags).where(ownedTag(userId, id)).returning({ id: tags.id }).get() !== undefined;
 }
 
-/** Identifiants des tags nommés, créés au besoin (dans la transaction de la recette). */
-export function findOrCreateTags(tx: Tx, names: readonly string[]): number[] {
+/** Identifiants des tags nommés du compte, créés au besoin (dans la transaction de la recette). */
+export function findOrCreateTags(tx: Tx, userId: number, names: readonly string[]): number[] {
   const ids = new Set<number>();
   for (const name of names) {
-    const existing = findByName(tx, name);
+    const existing = findByName(tx, userId, name);
     const id =
       existing?.id ??
       tx
         .insert(tags)
-        .values({ name, normalizedName: normalizeText(name) })
+        .values({ userId, name, normalizedName: normalizeText(name) })
         .returning({ id: tags.id })
         .get().id;
     ids.add(id);

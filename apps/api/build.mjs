@@ -7,6 +7,7 @@ await build({
     server: 'src/index.ts',
     'hash-password': 'src/scripts/hash-password.ts',
     backup: 'src/scripts/backup.ts',
+    users: 'src/scripts/users.ts',
   },
   outdir: 'dist',
   bundle: true,

@@ -17,9 +17,17 @@ export function createDb(filePath: string, migrationsDir: string) {
 
   const sqlite = new Database(filePath);
   sqlite.pragma('journal_mode = WAL');
-  sqlite.pragma('foreign_keys = ON');
 
+  // Migrations clés étrangères désactivées : la reconstruction d'une table (procédure SQLite en
+  // 12 étapes, cf. 0002) ne doit pas déclencher les ON DELETE CASCADE de ses enfants. Le pragma
+  // est sans effet dans une transaction : il est posé avant celle du migrateur.
+  sqlite.pragma('foreign_keys = OFF');
   const db = drizzle(sqlite, { schema, casing: 'snake_case' });
   migrate(db, { migrationsFolder: migrationsDir });
+  const violations = sqlite.pragma('foreign_key_check') as unknown[];
+  if (violations.length > 0) {
+    throw new Error(`Migration : ${violations.length} clé(s) étrangère(s) invalide(s)`);
+  }
+  sqlite.pragma('foreign_keys = ON');
   return db;
 }

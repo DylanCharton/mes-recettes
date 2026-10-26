@@ -8,6 +8,6 @@ const QuerySchema = z.object({ q: z.string().trim().max(60).default('') });
 
 export function ingredientRoutes({ db }: AppDeps) {
   return new Hono().get('/', validate('query', QuerySchema), (c) =>
-    c.json(searchIngredients(db, c.req.valid('query').q)),
+    c.json(searchIngredients(db, c.get('user').id, c.req.valid('query').q)),
   );
 }

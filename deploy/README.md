@@ -32,6 +32,7 @@ sudo install -d -m 755 /srv/mes-recettes /srv/backups
 sudo install -m 644 compose.yml /srv/mes-recettes/compose.yml   # deploy/compose.prod.yml
 sudo tee /srv/mes-recettes/.env >/dev/null <<'EOF'
 IMAGE=mes-recettes:<tag>
+ADMIN_EMAIL=moi@example.fr
 AUTH_PASSWORD_HASH='scrypt$…$…'
 SESSION_SECRET=<48 octets aléatoires>
 EOF
@@ -91,7 +92,21 @@ Restauration : arrêter le service, remplacer `/data/app.db` par une copie de
 
 ```sh
 sudo docker compose logs -f app            # journaux JSON (pino)
-sudo docker compose exec app node apps/api/dist/hash-password.js   # nouveau mot de passe
+sudo docker compose exec app node apps/api/dist/users.js list
+sudo docker compose exec -it app node apps/api/dist/users.js reset-password <email>
 ```
 
 Changer `SESSION_SECRET` puis `sudo docker compose up -d` déconnecte tous les appareils.
+
+## 5. Comptes (depuis la version multi-comptes, 12/10/2026)
+
+- Le compte n° 1 (administrateur) détient la bibliothèque d'avant le multi-comptes. Au premier
+  démarrage, il reçoit `ADMIN_EMAIL` et `AUTH_PASSWORD_HASH` ; ces variables sont ensuite ignorées
+  (changer de mot de passe se fait dans Réglages, ou avec `users.js reset-password`).
+- **Mise à jour d'une installation existante** : ajouter `ADMIN_EMAIL=<ton e-mail>` dans
+  `/srv/mes-recettes/.env` _avant_ de démarrer la nouvelle image. Toutes les sessions existantes
+  sont invalidées (nouveau format de cookie) : se reconnecter avec l'e-mail et le mot de passe
+  habituel.
+- Inviter : Réglages → Inviter quelqu'un → lien à usage unique, valable 7 jours.
+- Pas de récupération de mot de passe par e-mail : `users.js reset-password <email>` (déconnecte
+  tous les appareils du compte).

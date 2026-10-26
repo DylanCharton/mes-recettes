@@ -13,6 +13,8 @@ services:
     environment:
       NODE_ENV: production
       PUBLIC_URL: https://recettes.tojicode.fr
+      # Premier compte (n° 1) : lus tant qu'il n'a pas de mot de passe, ignorés ensuite (§ 18.4).
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?ADMIN_EMAIL manquant dans .env}
       AUTH_PASSWORD_HASH: ${AUTH_PASSWORD_HASH:?AUTH_PASSWORD_HASH manquant dans .env}
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET manquant dans .env}
       LOG_LEVEL: ${LOG_LEVEL:-info}

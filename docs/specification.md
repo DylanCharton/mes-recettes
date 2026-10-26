@@ -1,6 +1,6 @@
 # Mes recettes — Cahier des charges fonctionnel et technique
 
-> Version 1.1 — 28/09/2026 (ajout F8b « Saisons »)
+> Version 1.2 — 12/10/2026 (comptes multiples par invitation, § 18.4 ; décisions § 26.5)
 > Statut : **validée** le 28/09/2026 — arbitrages tranchés au § 26.4
 > Périmètre : application web personnelle de gestion de recettes, import Jow en priorité.
 
@@ -67,7 +67,7 @@ Principes directeurs :
 
 Explicitement exclu (toutes versions sauf mention contraire) :
 
-- Multi-utilisateur, partage social, comptes, rôles (V2 éventuelle, non conçue ici).
+- Partage social, recettes partagées entre comptes, rôles fins. *Les comptes multiples à bibliothèques séparées existent depuis le 12/10/2026 (§ 18.4) ; le partage entre comptes pourra s'appuyer dessus.*
 - Scraping en masse / synchronisation automatique du catalogue Jow. **Un import = une action volontaire sur une URL.**
 - Utilisation de l'API privée de Jow (`/api/*`, interdite par leur `robots.txt` et non contractuelle).
 - Moteur NLP de compréhension des ingrédients ; conversions d'unités avancées (g ↔ pièces, cuillère ↔ g).
@@ -269,9 +269,10 @@ Légende des versions : **MVP** (utilisable au quotidien), **V1** (MVP + courses
 - Téléchargement d'une copie cohérente de la base SQLite (sauvegarde à chaud).
 - Documentation : sauvegarde = copie de `data/` (base + images).
 
-### F15 — Authentification simple — MVP si exposition Internet
+### F15 — Authentification — MVP si exposition Internet
 
-- Un seul mot de passe, session par cookie ; voir § 18.2.
+- MVP : un seul mot de passe, session par cookie ; voir § 18.2.
+- Depuis le 12/10/2026 : comptes multiples (e-mail + mot de passe), chacun avec sa bibliothèque, créés par lien d'invitation ; voir § 18.4.
 
 ## 7. MVP
 
@@ -636,15 +637,22 @@ Conventions :
 - Préfixe `/api`, JSON en entrée/sortie, `camelCase` dans les DTO.
 - Validation Zod de tous les paramètres, corps et requêtes → `400 VALIDATION_ERROR` avec détail par champ.
 - Format d'erreur unique : `{ "error": { "code": "DUPLICATE_RECIPE", "message": "Cette recette existe déjà", "details": { … } } }`.
-- Toutes les routes (sauf `/api/health` et `/api/auth/login`) exigent une session si l'authentification est active.
+- Toutes les routes (sauf `/api/health`, `/api/auth/{me,login,logout}` et `/api/auth/invitations/*`) exigent une session si l'authentification est active.
+- Toutes les données (recettes, tags, autocomplétion d'ingrédients, doublons) sont celles **du compte de la session** ; une ressource d'un autre compte répond 404 (§ 18.4).
 
-### 14.1 Authentification
+### 14.1 Authentification et comptes
 
 | Méthode | Route | Description | Réponses |
 |---------|-------|-------------|----------|
-| POST | `/api/auth/login` | `{ password }` → pose le cookie de session | 204, 401 `INVALID_CREDENTIALS`, 429 |
+| POST | `/api/auth/login` | `{ email, password }` → pose le cookie de session | 204, 401 `INVALID_CREDENTIALS`, 429 |
 | POST | `/api/auth/logout` | Supprime le cookie | 204 |
-| GET | `/api/auth/me` | `{ authenticated: true, authEnabled: boolean }` | 200, 401 |
+| GET | `/api/auth/me` | `{ authEnabled, authenticated, user: { id, name, email, isAdmin } \| null }` | 200 |
+| POST | `/api/auth/password` | `{ currentPassword, newPassword }` → révoque les autres sessions du compte, renouvelle le cookie | 204, 401 `INVALID_CREDENTIALS`, 429 |
+| GET | `/api/auth/invitations/:token` | Invitation utilisable ? → `{ invitedBy }` (public) | 200, 404 `INVITATION_INVALID` |
+| POST | `/api/auth/invitations/:token/accept` | `{ name, email, password }` → crée le compte, ouvre la session (public) | 201, 400, 404 `INVITATION_INVALID`, 409 `EMAIL_TAKEN`, 429 |
+| GET | `/api/invitations` | Invitations en attente de l'administrateur | 200, 403 `FORBIDDEN` |
+| POST | `/api/invitations` | Crée un lien → `{ id, token, createdAt, expiresAt }` (jeton montré une seule fois) | 201, 403 |
+| DELETE | `/api/invitations/:id` | Révoque une invitation non utilisée | 204, 403, 404 |
 
 ### 14.2 Recettes
 
@@ -1009,7 +1017,7 @@ Exemple : A « 200 g carottes » + B « 300 g carottes » → `500 g Carotte`. A
 
 - HTTPS automatique (Caddy) → PWA + Share Target opérationnels partout.
 - **Authentification obligatoire** :
-  - un seul mot de passe ; son empreinte (scrypt, `node:crypto`, sans dépendance native) est dans `AUTH_PASSWORD_HASH`, générée par `pnpm --filter api hash-password` ;
+  - un seul mot de passe ; son empreinte (scrypt, `node:crypto`, sans dépendance native) est dans `AUTH_PASSWORD_HASH`, générée par `pnpm --filter api hash-password` — *remplacé le 12/10/2026 par des comptes (§ 18.4)* ;
   - session = cookie **signé** (HMAC, `SESSION_SECRET` ≥ 32 octets), `HttpOnly`, `Secure`, `SameSite=Lax`, durée 1 an (usage personnel sur appareils de confiance) ; changer `SESSION_SECRET` révoque toutes les sessions ;
   - le partage Android ouvre la PWA par une navigation GET de premier niveau sur la même origine : le cookie est envoyé, l'import arrive connecté ;
   - protection CSRF : middleware `csrf` de Hono (vérification de l'en-tête `Origin` sur les requêtes non-GET) + corps JSON obligatoire ;
@@ -1018,6 +1026,37 @@ Exemple : A « 200 g carottes » + B « 300 g carottes » → `500 g Carotte`. A
 - Recommandé en complément : sauvegarde quotidienne de `data/` (cron VPS).
 
 Recommandation : **scénario B**, parce que l'objectif principal (partage depuis Jow sur le S24 Ultra) exige HTTPS et que l'infrastructure existe déjà. Le coût de l'authentification est faible (≈ 150 lignes, une page).
+
+### 18.4 Comptes multiples (12/10/2026)
+
+Objectif : partager l'application avec d'autres personnes, chacune avec **sa propre bibliothèque**, sans qu'elles voient mes recettes ; base pour un éventuel partage de recettes entre comptes plus tard.
+
+**Modèle.**
+
+- Table `user` : `email` (unique, minuscules), `name`, `password_hash` (scrypt), `is_admin`, `session_version`, `created_at`.
+- `recipe.user_id` et `tag.user_id` (non nuls, `ON DELETE CASCADE`) ; unicité des tags par `(user_id, normalized_name)`. Ingrédients, étapes, saisons et liens recette–tag héritent de la recette.
+- Le dictionnaire `ingredient` reste **commun** (noms canoniques, aucune donnée personnelle) ; l'autocomplétion ne propose que les ingrédients des recettes du compte.
+- Table `invitation` : `token_hash` (SHA-256 d'un jeton aléatoire de 192 bits — le jeton n'est jamais stocké), `created_by`, `expires_at` (7 jours), `used_at`, `used_by`.
+- Migration `0002_accounts` : crée le compte n° 1 (« dylan », administrateur) et lui rattache toute la bibliothèque existante ; `recipe` et `tag` sont reconstruites (procédure SQLite en 12 étapes), les migrations s'exécutant clés étrangères désactivées.
+
+**Création des comptes.**
+
+- Premier compte : au démarrage, s'il n'a pas de mot de passe, il reçoit `ADMIN_EMAIL` + `AUTH_PASSWORD_HASH` (jamais écrasé ensuite). En production, le serveur refuse de démarrer si aucun compte ne peut se connecter.
+- Autres comptes : **lien d'invitation** à usage unique créé par un administrateur (Réglages → Inviter quelqu'un), partagé par le menu de partage du téléphone ; la personne choisit prénom, e-mail et mot de passe (12 caractères minimum) sur `/invite/:token`, puis arrive connectée sur une bibliothèque vide.
+- Pas d'inscription libre (l'import fait télécharger des pages par le serveur : surface d'abus) ni de récupération par e-mail (pas de service SMTP) ; réinitialisation par l'administrateur : `node apps/api/dist/users.js reset-password <email>`.
+
+**Sessions.**
+
+- Cookie signé `v2.<compte>.<version>` ; la version est comparée à `user.session_version` à chaque requête. Changer de mot de passe l'incrémente : les autres appareils du compte sont déconnectés, l'appareil courant reçoit un nouveau cookie. Les cookies `v1` du MVP sont refusés (reconnexion unique).
+- `AUTH_DISABLED=true` (réseau privé, développement) : toutes les requêtes agissent au nom du compte n° 1.
+
+**Cloisonnement.**
+
+- Chaque service reçoit le compte de la session ; une recette ou un tag d'un autre compte est « introuvable » (404), jamais « interdit » (pas de fuite d'existence).
+- Doublons d'import détectés par compte : deux comptes peuvent importer la même recette Jow.
+- Images : noms UUID v4 non devinables, servies à toute session (l'aperçu d'une photo pas encore enregistrée passe par `/images/…`) ; une recette ne peut pas reprendre l'image d'une recette d'un autre compte (sinon sa suppression effacerait celle de l'autre).
+- La déconnexion vide les caches du service worker remplis par le compte (`recipes`, `images`).
+- Login : même message et même durée pour un e-mail inconnu et un mauvais mot de passe (vérification scrypt factice).
 
 ## 19. Stratégie images
 
@@ -1457,7 +1496,10 @@ Format : chaque critère est vérifiable manuellement ou par test (T = couvert p
 - [ ] Une redirection de jow.fr vers un hôte hors liste blanche est refusée. (T)
 - [ ] Une réponse de plus de 3 Mo est interrompue. (T)
 - [ ] Un titre importé contenant `<script>alert(1)</script>` est stocké et affiché comme texte brut. (T)
-- [ ] Le serveur refuse de démarrer en production sans `AUTH_PASSWORD_HASH` ni `AUTH_DISABLED=true`.
+- [ ] Le serveur refuse de démarrer en production sans `SESSION_SECRET` ni `AUTH_DISABLED=true`, ou si aucun compte ne peut se connecter.
+- [x] Un compte ne voit, ne modifie ni ne supprime les recettes et tags d'un autre (404) ; l'autocomplétion d'ingrédients et la détection de doublons sont propres au compte. (T)
+- [x] Un lien d'invitation sert une fois, expire après 7 jours, peut être révoqué ; seuls les administrateurs en créent. (T)
+- [x] Changer de mot de passe déconnecte les autres appareils du compte. (T)
 
 ---
 
@@ -1519,3 +1561,11 @@ Toutes les recommandations du § 26.3 sont **validées**. Elles font désormais 
 | A6 | Domaine : `recettes.tojicode.fr`. |
 | A7 | Planning des repas en V1.5 (phase 6). |
 | A8 | Filtres de saison stricts : une recette sans saison n'apparaît pas dans « De saison » ; « Toute l'année » = les 4 saisons cochées. |
+
+### 26.5 Décisions (12/10/2026) — partage de l'application
+
+| # | Décision |
+|---|----------|
+| A9 | Partager l'application = **comptes multiples dans la même instance** (plutôt qu'une 2ᵉ instance), pour pouvoir développer plus tard le partage entre comptes. |
+| A10 | Comptes créés par **lien d'invitation** (administrateur), pas d'inscription libre. |
+| A11 | Connexion par **e-mail** + mot de passe. Le compte n° 1 (« dylan ») détient la bibliothèque existante. |

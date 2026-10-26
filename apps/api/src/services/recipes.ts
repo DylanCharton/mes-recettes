@@ -158,12 +158,13 @@ const imageUrl = (row: { imagePath: string | null; imageSourceUrl: string | null
 /** Remplace tags et saisons quand la requête les fournit (absents = inchangés). */
 function setTagsAndSeasons(
   tx: Tx,
+  userId: number,
   recipeId: number,
   input: { tags?: string[]; seasons?: Season[] },
 ) {
   if (input.tags !== undefined) {
     tx.delete(recipeTags).where(eq(recipeTags.recipeId, recipeId)).run();
-    for (const tagId of findOrCreateTags(tx, input.tags)) {
+    for (const tagId of findOrCreateTags(tx, userId, input.tags)) {
       tx.insert(recipeTags).values({ recipeId, tagId }).run();
     }
   }
@@ -222,8 +223,11 @@ function toDetail(
   };
 }
 
-export function getRecipe(db: Db | Tx, id: number): RecipeDetail | null {
-  const recipe = db.select().from(recipes).where(eq(recipes.id, id)).get();
+/** Recette du compte (une recette d'un autre compte est « introuvable »). */
+const owned = (userId: number, id: number) => and(eq(recipes.id, id), eq(recipes.userId, userId));
+
+export function getRecipe(db: Db | Tx, userId: number, id: number): RecipeDetail | null {
+  const recipe = db.select().from(recipes).where(owned(userId, id)).get();
   if (!recipe) return null;
 
   const lines = db
@@ -259,8 +263,8 @@ const containsPattern = (value: string) => `%${value.replace(/[\\%_]/g, (c) => `
 const likeContains = (column: SQL, value: string) =>
   sql`${column} like ${containsPattern(value)} escape '\\'`;
 
-function listConditions(db: Db, query: RecipeListQuery): SQL[] {
-  const conditions: SQL[] = [];
+function listConditions(db: Db, userId: number, query: RecipeListQuery): SQL[] {
+  const conditions: SQL[] = [eq(recipes.userId, userId)];
   const oneRow = { one: sql`1` };
 
   // Par défaut, les archivées sont masquées (spec F3).
@@ -339,8 +343,8 @@ const SORTS = {
   updated: [desc(recipes.updatedAt), desc(recipes.id)],
 } satisfies Record<RecipeListQuery['sort'], SQL[]>;
 
-export function listRecipes(db: Db, query: RecipeListQuery): RecipeList {
-  const where = and(...listConditions(db, query));
+export function listRecipes(db: Db, userId: number, query: RecipeListQuery): RecipeList {
+  const where = and(...listConditions(db, userId, query));
   const rows = db
     .select({
       id: recipes.id,
@@ -372,11 +376,12 @@ export function listRecipes(db: Db, query: RecipeListQuery): RecipeList {
 }
 
 /**
- * Recette déjà importée depuis la même source : même identifiant externe, sinon même URL
- * canonique (spec F12).
+ * Recette du compte déjà importée depuis la même source : même identifiant externe, sinon même
+ * URL canonique (spec F12).
  */
 export function findDuplicate(
   db: Db,
+  userId: number,
   source: RecipeSource,
   externalId: string | null | undefined,
   sourceUrl?: string | null,
@@ -395,13 +400,13 @@ export function findDuplicate(
       imageSourceUrl: recipes.imageSourceUrl,
     })
     .from(recipes)
-    .where(or(...conditions))
+    .where(and(eq(recipes.userId, userId), or(...conditions)))
     .orderBy(asc(recipes.id))
     .get();
   return row ? { id: row.id, title: row.title, imageUrl: imageUrl(row) } : null;
 }
 
-export function createRecipe(db: Db, input: RecipeInputParsed): RecipeDetail {
+export function createRecipe(db: Db, userId: number, input: RecipeInputParsed): RecipeDetail {
   const timestamp = now();
   const source = input.source ?? 'manual';
   // Champs de provenance : écrits une seule fois, à la création.
@@ -425,14 +430,15 @@ export function createRecipe(db: Db, input: RecipeInputParsed): RecipeDetail {
       .values({
         ...recipeFields(input, lines),
         ...importFields,
+        userId,
         createdAt: timestamp,
         updatedAt: timestamp,
       })
       .returning({ id: recipes.id })
       .get();
     insertChildren(tx, id, lines, input.steps);
-    setTagsAndSeasons(tx, id, input);
-    return getRecipe(tx, id)!;
+    setTagsAndSeasons(tx, userId, id, input);
+    return getRecipe(tx, userId, id)!;
   });
 }
 
@@ -443,6 +449,7 @@ export function createRecipe(db: Db, input: RecipeInputParsed): RecipeDetail {
  */
 export function updateRecipe(
   db: Db,
+  userId: number,
   id: number,
   input: RecipeInputParsed,
 ): { recipe: RecipeDetail; previousImagePath: string | null } | null {
@@ -450,7 +457,7 @@ export function updateRecipe(
     const existing = tx
       .select({ imagePath: recipes.imagePath })
       .from(recipes)
-      .where(eq(recipes.id, id))
+      .where(owned(userId, id))
       .get();
     if (!existing) return null;
 
@@ -478,29 +485,37 @@ export function updateRecipe(
     tx.delete(recipeIngredients).where(eq(recipeIngredients.recipeId, id)).run();
     tx.delete(recipeSteps).where(eq(recipeSteps.recipeId, id)).run();
     insertChildren(tx, id, lines, input.steps);
-    setTagsAndSeasons(tx, id, input);
+    setTagsAndSeasons(tx, userId, id, input);
 
-    return { recipe: getRecipe(tx, id)!, previousImagePath: existing.imagePath };
+    return { recipe: getRecipe(tx, userId, id)!, previousImagePath: existing.imagePath };
   });
 }
 
-export function patchRecipe(db: Db, id: number, patch: RecipePatch): RecipeDetail | null {
+export function patchRecipe(
+  db: Db,
+  userId: number,
+  id: number,
+  patch: RecipePatch,
+): RecipeDetail | null {
   return db.transaction((tx) => {
     const { seasons, ...fields } = patch;
     const updated = tx
       .update(recipes)
       .set({ ...fields, updatedAt: now() })
-      .where(eq(recipes.id, id))
+      .where(owned(userId, id))
       .returning({ id: recipes.id })
       .get();
     if (!updated) return null;
-    setTagsAndSeasons(tx, id, { seasons });
-    return getRecipe(tx, id);
+    setTagsAndSeasons(tx, userId, id, { seasons });
+    return getRecipe(tx, userId, id);
   });
 }
 
-/** Autocomplétion du filtre « ingrédient » : ingrédients utilisés, les plus fréquents d'abord. */
-export function searchIngredients(db: Db, query: string) {
+/**
+ * Autocomplétion du filtre « ingrédient » : ingrédients des recettes du compte (le dictionnaire
+ * est commun), les plus fréquents d'abord.
+ */
+export function searchIngredients(db: Db, userId: number, query: string) {
   const key = ingredientKey(query);
   return (
     db
@@ -511,7 +526,13 @@ export function searchIngredients(db: Db, query: string) {
       })
       .from(ingredients)
       .innerJoin(recipeIngredients, eq(recipeIngredients.ingredientId, ingredients.id))
-      .where(key ? likeContains(sql`${ingredients.normalizedName}`, key) : undefined)
+      .innerJoin(recipes, eq(recipes.id, recipeIngredients.recipeId))
+      .where(
+        and(
+          eq(recipes.userId, userId),
+          key ? likeContains(sql`${ingredients.normalizedName}`, key) : undefined,
+        ),
+      )
       .groupBy(ingredients.id)
       // Début du nom, puis début de mot, puis ailleurs (« po » : Poulet… avant Curry en poudre).
       .orderBy(
@@ -526,12 +547,24 @@ export function searchIngredients(db: Db, query: string) {
   );
 }
 
-export function deleteRecipe(db: Db, id: number): { imagePath: string | null } | null {
+export function deleteRecipe(
+  db: Db,
+  userId: number,
+  id: number,
+): { imagePath: string | null } | null {
+  return (
+    db.delete(recipes).where(owned(userId, id)).returning({ imagePath: recipes.imagePath }).get() ??
+    null
+  );
+}
+
+/** Image déjà rattachée à une recette d'un autre compte (ne pas la partager ni la supprimer). */
+export function isImageOwnedByOther(db: Db, userId: number, imagePath: string): boolean {
   return (
     db
-      .delete(recipes)
-      .where(eq(recipes.id, id))
-      .returning({ imagePath: recipes.imagePath })
-      .get() ?? null
+      .select({ id: recipes.id })
+      .from(recipes)
+      .where(and(eq(recipes.imagePath, imagePath), ne(recipes.userId, userId)))
+      .get() !== undefined
   );
 }

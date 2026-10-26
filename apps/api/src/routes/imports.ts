@@ -10,6 +10,6 @@ export function importRoutes(deps: AppDeps) {
     '/preview',
     rateLimit({ limit: 10, windowMs: 60_000, maxConcurrent: 2 }),
     validate('json', ImportPreviewRequestSchema),
-    async (c) => c.json(await previewImport(deps, c.req.valid('json'))),
+    async (c) => c.json(await previewImport(deps, c.get('user').id, c.req.valid('json'))),
   );
 }

@@ -7,16 +7,55 @@ import {
   real,
   sqliteTable,
   text,
+  uniqueIndex,
 } from 'drizzle-orm/sqlite-core';
 import type { Nutrition, RecipeSource, RecipeStatus, Season } from '@mes-recettes/shared';
 
 // Noms de colonnes en snake_case générés via l'option `casing` (client et drizzle-kit).
 // Dates : texte ISO 8601 UTC, portable vers PostgreSQL (spec § 11.1).
 
+/**
+ * Comptes (spec § 18.4). Le compte n° 1, créé par la migration 0002, détient la bibliothèque
+ * d'avant le multi-comptes ; son e-mail et son mot de passe sont posés au premier démarrage.
+ */
+export const users = sqliteTable('user', {
+  id: integer().primaryKey({ autoIncrement: true }),
+  /** Minuscules ; `null` tant que le compte n° 1 n'est pas initialisé. */
+  email: text().unique(),
+  name: text().notNull(),
+  passwordHash: text(),
+  isAdmin: integer({ mode: 'boolean' }).notNull().default(false),
+  /** Incrémenté à chaque changement de mot de passe : invalide les autres sessions. */
+  sessionVersion: integer().notNull().default(1),
+  createdAt: text()
+    .notNull()
+    .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`),
+});
+
+/** Lien d'invitation à usage unique ; seule l'empreinte SHA-256 du jeton est stockée. */
+export const invitations = sqliteTable(
+  'invitation',
+  {
+    id: integer().primaryKey({ autoIncrement: true }),
+    tokenHash: text().notNull().unique(),
+    createdBy: integer()
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: text().notNull(),
+    expiresAt: text().notNull(),
+    usedAt: text(),
+    usedBy: integer().references(() => users.id, { onDelete: 'set null' }),
+  },
+  (t) => [index('invitation_created_by_idx').on(t.createdBy)],
+);
+
 export const recipes = sqliteTable(
   'recipe',
   {
     id: integer().primaryKey({ autoIncrement: true }),
+    userId: integer()
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
     title: text().notNull(),
     description: text(),
     servings: integer().notNull().default(2),
@@ -45,6 +84,7 @@ export const recipes = sqliteTable(
     updatedAt: text().notNull(),
   },
   (t) => [
+    index('recipe_user_id_idx').on(t.userId),
     index('recipe_source_external_id_idx').on(t.source, t.externalId),
     index('recipe_source_url_idx').on(t.sourceUrl),
     index('recipe_status_idx').on(t.status),
@@ -54,6 +94,7 @@ export const recipes = sqliteTable(
   ],
 );
 
+/** Dictionnaire d'ingrédients canoniques, commun à tous les comptes (aucune donnée personnelle). */
 export const ingredients = sqliteTable('ingredient', {
   id: integer().primaryKey({ autoIncrement: true }),
   name: text().notNull(),
@@ -99,15 +140,23 @@ export const recipeSteps = sqliteTable(
   (t) => [index('recipe_step_recipe_id_idx').on(t.recipeId)],
 );
 
-export const tags = sqliteTable('tag', {
-  id: integer().primaryKey({ autoIncrement: true }),
-  name: text().notNull(),
-  /** Clé d'unicité : minuscules, sans accents (« Végétarien » = « vegetarien »). */
-  normalizedName: text().notNull().unique(),
-  createdAt: text()
-    .notNull()
-    .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`),
-});
+/** Tags propres à chaque compte. */
+export const tags = sqliteTable(
+  'tag',
+  {
+    id: integer().primaryKey({ autoIncrement: true }),
+    userId: integer()
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text().notNull(),
+    /** Clé d'unicité par compte : minuscules, sans accents (« Végétarien » = « vegetarien »). */
+    normalizedName: text().notNull(),
+    createdAt: text()
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`),
+  },
+  (t) => [uniqueIndex('tag_user_normalized_name_unique').on(t.userId, t.normalizedName)],
+);
 
 export const recipeTags = sqliteTable(
   'recipe_tag',
