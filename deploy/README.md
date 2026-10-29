@@ -53,15 +53,15 @@ docker exec edge-caddy caddy reload --config /etc/caddy/Caddyfile
 
 ## 2. Publier une version
 
-Pas de registre : l'image est construite sur ton poste et transférée par SSH
-(le VPS est en amd64, comme Docker Desktop : pas de build multi-plateforme).
-Depuis la racine du dépôt, dans Git Bash :
+Pas de registre ni de Docker sur le poste : le code du commit courant (`git archive`, les
+modifications non commitées ne partent pas) est envoyé par SSH et l'image est construite sur
+le VPS. Depuis la racine du dépôt, dans Git Bash :
 
 ```sh
 bash deploy/deploy.sh            # ou : bash deploy/deploy.sh utilisateur@hôte
 ```
 
-Le script construit `mes-recettes:<commit>`, la charge sur le VPS, puis y lance
+Le script construit `mes-recettes:<commit>` sur le VPS, puis y lance
 `remote-deploy.sh` en `sudo` (mot de passe demandé une fois) :
 
 - réinstalle `/srv/mes-recettes/compose.yml` depuis `compose.prod.yml` ;
